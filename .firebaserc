@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "juegahiphop"
+  },
+  "targets": {
+    "juegahiphop": {
+      "hosting": {
+        "trivia": [
+          "triviajuegahiphop"
+        ]
+      }
+    }
+  }
+}
