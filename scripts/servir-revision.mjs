@@ -20,6 +20,8 @@ const RAIZ = path.dirname(__dirname);
 const LOTES_DIR = path.join(RAIZ, 'lotes');
 const REVISION_DIR = path.join(RAIZ, 'revision');
 const ESTADO_FILE = path.join(LOTES_DIR, 'estado.json');
+const DATASET_FILE = path.join(RAIZ, 'src', 'data', 'preguntas.json');
+const REVISION_DATASET = path.join(LOTES_DIR, 'revision-dataset.json');
 const ENCICLOPEDIA = 'E:/dev/JuegaHipHop/Enciclopedia HH/dist/enciclopedia.json';
 const PYTHON = process.env.PYTHON || 'python';
 
@@ -94,21 +96,25 @@ function revisionPath(n) {
 function semanticaLote(n, lote) {
   const cached = _semCache.get(n);
   if (cached && Date.now() - cached.ts < 60_000) return Promise.resolve(cached.payload);
-  const payload = {
-    preguntas: lote.preguntas.map((p, idx) => ({
-      idx, pregunta: p.pregunta, entrada_id: p.entrada_id, termino: p.termino,
-    })),
-  };
+  return clasificarPayload(n, lote.preguntas.map((p, idx) => ({
+    idx: String(idx), pregunta: p.pregunta, entrada_id: p.entrada_id, termino: p.termino,
+  })));
+}
+
+function clasificarPayload(key, preguntas) {
+  const cached = _semCache.get(key);
+  if (cached && Date.now() - cached.ts < 60_000) return Promise.resolve(cached.payload);
+  const payload = { preguntas };
   return new Promise(resolve => {
     const proc = spawn(PYTHON, [path.join(__dirname, 'clasificar-revision.py')],
       { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     proc.stdout.on('data', c => { stdout += c; });
-    proc.on('error', () => { _semCache.set(n, { ts: Date.now(), payload: {} }); resolve({}); });
+    proc.on('error', () => { _semCache.set(key, { ts: Date.now(), payload: {} }); resolve({}); });
     proc.on('close', () => {
       let out = {};
       try { out = JSON.parse(stdout); } catch { out = {}; }
-      _semCache.set(n, { ts: Date.now(), payload: out });
+      _semCache.set(key, { ts: Date.now(), payload: out });
       resolve(out);
     });
     proc.stdin.write(JSON.stringify(payload));
@@ -240,6 +246,98 @@ const server = http.createServer(async (req, res) => {
     if ((m = p.match(/^\/api\/lote\/(\d+)\/reset$/)) && req.method === 'POST') {
       const n = parseInt(m[1], 10);
       try { unlinkSync(revisionPath(n)); } catch {}
+      return json(res, 200, { ok: true });
+    }
+
+    // GET /api/dataset — vista paginada de TODAS las preguntas con filtros
+    if (p === '/api/dataset' && req.method === 'GET') {
+      const data = await leerJson(DATASET_FILE, { preguntas: [], meta: {} });
+      const rev = existsSync(REVISION_DATASET)
+        ? JSON.parse(readFileSync(REVISION_DATASET, 'utf8')) : null;
+      const porRev = {};
+      if (rev) for (const r of rev.preguntas) porRev[r.id] = r;
+      let lista = data.preguntas;
+      const area = url.searchParams.get('area');
+      const estado = url.searchParams.get('estado');
+      const q = (url.searchParams.get('q') || '').toLowerCase();
+      const dispares = url.searchParams.get('dispares') === '1';
+      if (area) lista = lista.filter(x => (x.area || '') === area);
+      if (estado) lista = lista.filter(x => {
+        const r = porRev[x.id];
+        const e = r?.estado || (r?.editada ? 'editada' : 'pendiente');
+        return e === estado;
+      });
+      if (q) lista = lista.filter(x => ((x.pregunta || '') + ' ' + (x.termino || '') + ' ' + (x.id || '')).toLowerCase().includes(q));
+      if (dispares) lista = lista.filter(x => {
+        const ls = (x.opciones || []).map(o => String(o || '').length);
+        if (ls.length < 2) return false;
+        return Math.max(...ls) / Math.max(Math.min(...ls), 1) > 2.2;
+      });
+      const page = Math.max(parseInt(url.searchParams.get('page') || '1', 10), 1);
+      const ps = Math.min(parseInt(url.searchParams.get('ps') || '50', 10), 200);
+      const total_filtrado = lista.length;
+      const pagina = lista.slice((page - 1) * ps, page * ps);
+      const ent = await entradas();
+      const sem = await clasificarPayload('d:' + area + ':' + estado + ':' + q + ':' + dispares + ':' + page, pagina.map(x => ({
+        idx: x.id, pregunta: x.pregunta, entrada_id: x.entrada_id, termino: x.termino,
+      })));
+      const items = pagina.map(q => {
+        const e = ent[q.entrada_id] || {};
+        return {
+          ...q,
+          errores_js: Validador.validar(q, { termino: e.termino || q.termino || '', base: e.base }),
+          semantica: sem[q.id] || { w: '?', accion: 'quedar' },
+          fuente_enc: e,
+        };
+      });
+      const areas = [...new Set(data.preguntas.map(x => x.area || '?'))].sort();
+      return json(res, 200, {
+        total: data.preguntas.length, total_filtrado, page, pageSize: ps,
+        areas, revision: rev, preguntas: items,
+      });
+    }
+
+    // POST /api/dataset — guardar revisión del dataset
+    if (p === '/api/dataset' && req.method === 'POST') {
+      const body = await cuerpo(req);
+      if (!Array.isArray(body.preguntas)) return json(res, 400, { error: 'falta preguntas[]' });
+      const revExistente = existsSync(REVISION_DATASET)
+        ? JSON.parse(readFileSync(REVISION_DATASET, 'utf8')) : null;
+      if (revExistente && revExistente.actualizado !== (body.base_actualizado ?? null)) {
+        return json(res, 409, { error: 'la revisión cambió en otro lado', actualizado: revExistente.actualizado });
+      }
+      const rev = {
+        dataset: true,
+        actualizado: new Date().toISOString(),
+        preguntas: body.preguntas.map(r => ({
+          id: r.id, estado: r.estado || null, editada: !!r.editada,
+          pregunta: r.pregunta, opciones: r.opciones,
+          indice_correcta: r.indice_correcta, explicacion: r.explicacion, nota: r.nota || '',
+        })),
+      };
+      await writeFile(REVISION_DATASET, JSON.stringify(rev, null, 2), 'utf8');
+      return json(res, 200, { ok: true, actualizado: rev.actualizado });
+    }
+
+    // POST /api/dataset/aplicar — ejecuta aplicar-dataset.py y limpia la revisión
+    if (p === '/api/dataset/aplicar' && req.method === 'POST') {
+      const script = path.join(__dirname, 'aplicar-dataset.py');
+      const proc = spawn(PYTHON, [script], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '', stderr = '';
+      proc.stdout.on('data', c => { stdout += c; });
+      proc.stderr.on('data', c => { stderr += c; });
+      proc.on('close', async code => {
+        if (code === 0) {
+          try { unlinkSync(REVISION_DATASET); } catch {}
+        }
+        return json(res, code === 0 ? 200 : 500, { reporte: stdout + (stderr ? '\n' + stderr : '') });
+      });
+      return;
+    }
+
+    // POST /api/dataset/reset
+    if (p === '/api/dataset/reset' && req.method === 'POST') {
+      try { unlinkSync(REVISION_DATASET); } catch {}
       return json(res, 200, { ok: true });
     }
 

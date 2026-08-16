@@ -1,8 +1,9 @@
-/* app.js — panel de revisión de lotes de la Trivia (Motor v2, Fase 5).
-   Ver + corregir las preguntas que genera el redactor: aprobar/rechazar,
-   editar pregunta/opciones/correcta/explicación, autosave vía API local.
-   Fuente de verdad del estado: state.revision[idx] (sincronizada con las
-   tarjetas al editar; el POST persiste el array completo). */
+/* app.js — panel de revisión de la Trivia (Motor v2, Fase 5).
+   Vista DATASET: todas las preguntas vivas, filtros por área/estado/búsqueda/
+   largos dispares, edición directa y botón "aplicar al dataset".
+   Vista LOTES: preguntas nuevas del redactor (flujo de integración).
+   El estado de revisión del dataset se acumula entre páginas (state.d.rev)
+   y se persiste en lotes/revision-dataset.json con autosave. */
 'use strict';
 import { validar as validarReglas } from './validador.js';
 
@@ -15,9 +16,11 @@ const el = (tag, cls, txt) => {
 };
 
 const state = {
-  lotes: [], lote: null, n: null, items: [], filtro: 'todas',
-  revision: {}, // idx → {idx, entrada_id, estado, editada, pregunta, opciones, indice_correcta, explicacion, nota}
-  dirty: false,
+  vista: 'dataset',
+  // dataset
+  d: { total: 0, totalF: 0, page: 1, pageSize: 50, areas: [], items: [], rev: {}, actualizado: null, dirty: false },
+  // lotes
+  lotes: [], n: null, items: [], revL: {}, actualizadoL: null, dirtyL: false, filtroL: 'todas',
 };
 
 // ─── API ──────────────────────────────────────────────────────────────────
@@ -27,30 +30,34 @@ async function api(path, opts) {
   return r.json();
 }
 
-// revisión mutable por índice (crea la fila si no existe)
-function rev(idx) {
-  if (!state.revision[idx]) {
-    const p = state.items.find(x => x.idx === idx);
-    state.revision[idx] = {
-      idx, entrada_id: p?.entrada_id || '', estado: null, editada: false,
-      pregunta: null, opciones: null, indice_correcta: null, explicacion: null, nota: '',
-    };
-  }
-  return state.revision[idx];
-}
+function norm(s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
 
-// textos efectivos de una pregunta (revisión si editó, si no el original)
-function textos(p) {
-  const r = state.revision[p.idx];
+// ─── filas de revisión ────────────────────────────────────────────────────
+function revD(id) {
+  if (!state.d.rev[id]) {
+    const p = state.d.items.find(x => x.id === id);
+    state.d.rev[id] = { id, estado: null, editada: false, pregunta: null, opciones: null, indice_correcta: null, explicacion: null, nota: '' };
+  }
+  return state.d.rev[id];
+}
+function revL(idx) {
+  if (!state.revL[idx]) {
+    const p = state.items.find(x => x.idx === idx);
+    state.revL[idx] = { idx, entrada_id: p?.entrada_id || '', estado: null, editada: false, pregunta: null, opciones: null, indice_correcta: null, explicacion: null, nota: '' };
+  }
+  return state.revL[idx];
+}
+function textos(p, rev) {
+  const r = rev(p);
   return {
     pregunta: r?.pregunta ?? p.pregunta,
-    opciones: r?.opciones ?? [...p.opciones],
+    opciones: r?.opciones ?? [...(p.opciones || [])],
     indice_correcta: r?.indice_correcta ?? p.indice_correcta,
     explicacion: r?.explicacion ?? p.explicacion,
   };
 }
 
-// ─── carga inicial ────────────────────────────────────────────────────────
+// ─── INIT ─────────────────────────────────────────────────────────────────
 async function init() {
   try {
     const data = await api('/api/lotes');
@@ -58,16 +65,166 @@ async function init() {
     $('#stat-preguntas').textContent = data.dataset.total;
     $('#stat-enc').textContent = data.enciclopedia;
     $('#stat-version').textContent = data.dataset.version;
+    $('#tab-lotes-n').textContent = state.lotes.length;
     renderLotes();
-    // lote activo: primero con pendientes en su revisión > revisión a medias
-    // > último no integrado > último
-    const activo = state.lotes.find(l => l.pendientes > 0)
-      || state.lotes.find(l => l.estado === 'revision')
-      || state.lotes.find(l => l.estado !== 'integrado')
-      || state.lotes[state.lotes.length - 1];
-    if (activo) cargarLote(activo.n);
+    cargarDataset();
   } catch (e) { console.error(e); }
 }
+
+// ══════════════════════════ VISTA DATASET ══════════════════════════
+
+function filtrosDS() {
+  return {
+    area: $('#f-area').value,
+    estado: $('#f-estado').value,
+    q: $('#f-q').value.trim(),
+    dispares: $('#f-dispares').checked ? '1' : '',
+  };
+}
+
+async function cargarDataset() {
+  const f = filtrosDS();
+  const qs = new URLSearchParams({ area: f.area, estado: f.estado, q: f.q, dispares: f.dispares, page: state.d.page, ps: state.d.pageSize });
+  const data = await api('/api/dataset?' + qs);
+  state.d.total = data.total;
+  state.d.totalF = data.total_filtrado;
+  state.d.items = data.preguntas;
+  state.d.actualizado = data.revision?.actualizado ?? null;
+  if (data.revision) for (const r of data.revision.preguntas) state.d.rev[r.id] = r;
+  // poblar select de áreas (una vez)
+  const sel = $('#f-area');
+  if (sel.options.length <= 1) {
+    for (const a of data.areas) {
+      const o = document.createElement('option');
+      o.value = a; o.textContent = a;
+      sel.appendChild(o);
+    }
+  }
+  $('#tab-dataset-n').textContent = data.total;
+  renderDataset();
+}
+
+function renderDataset() {
+  const grid = $('#cards-ds');
+  grid.innerHTML = '';
+  for (const p of state.d.items) grid.appendChild(renderCard(p, ctxD));
+  // progreso
+  let ap = 0, re = 0, ed = 0;
+  for (const r of Object.values(state.d.rev)) {
+    if (r.estado === 'aprobada') ap++;
+    if (r.estado === 'rechazada') re++;
+    if (r.editada) ed++;
+  }
+  $('#prog-ds').textContent = `Revisadas: ${ap}✓ aprobadas · ${re}✗ rechazadas · ${ed}✎ editadas · ${Object.keys(state.d.rev).length} decididas de ${state.d.total}`;
+  // paginación
+  const pag = $('#paginacion');
+  pag.innerHTML = '';
+  const totalPages = Math.max(1, Math.ceil(state.d.totalF / state.d.pageSize));
+  const bPrev = el('button', 'btn ghost', '‹');
+  bPrev.disabled = state.d.page <= 1;
+  bPrev.onclick = () => { state.d.page--; cargarDataset(); };
+  const bNext = el('button', 'btn ghost', '›');
+  bNext.disabled = state.d.page >= totalPages;
+  bNext.onclick = () => { state.d.page++; cargarDataset(); };
+  const info = el('span', null, `página ${state.d.page} de ${totalPages} · ${state.d.totalF} resultados (${state.d.total} total)`);
+  pag.append(bPrev, info, bNext);
+}
+
+// ctx para las tarjetas del dataset
+const ctxD = {
+  getRev: p => revD(p.id),
+  textos: p => textos(p, revD),
+  chip: p => { const r = revD(p.id); return r?.estado || (r?.editada ? 'editada' : null); },
+  save: scheduleSaveD,
+};
+
+// ─── autosave dataset ─────────────────────────────────────────────────────
+let saveTimerD = null;
+function scheduleSaveD() {
+  state.d.dirty = true;
+  setSaveD('guardando…', '');
+  clearTimeout(saveTimerD);
+  saveTimerD = setTimeout(guardarDataset, 800);
+}
+function setSaveD(txt, cls) {
+  const s = $('#save-ds');
+  s.textContent = txt;
+  s.className = 'save-state' + (cls ? ' ' + cls : '');
+}
+async function guardarDataset() {
+  if (!state.d.dirty) return;
+  // serializa TODAS las filas decididas (acumuladas entre páginas)
+  const filas = Object.values(state.d.rev).map(r => ({
+    id: r.id, estado: r.estado ?? null, editada: r.editada ?? false,
+    pregunta: r.pregunta ?? null, opciones: r.opciones ?? null,
+    indice_correcta: r.indice_correcta ?? null, explicacion: r.explicacion ?? null, nota: r.nota ?? '',
+  }));
+  try {
+    const res = await api('/api/dataset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_actualizado: state.d.actualizado ?? null, preguntas: filas }),
+    });
+    state.d.actualizado = res.actualizado;
+    state.d.dirty = false;
+    setSaveD('✓ guardado ' + new Date(res.actualizado).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'ok');
+    renderDataset();
+  } catch (e) {
+    const msg = String(e.message);
+    if (msg.includes('cambió en otro lado')) {
+      setSaveD('⚠ la revisión cambió en otro lado — recargando…', 'err');
+      setTimeout(() => { state.d.page = 1; cargarDataset(); }, 1200);
+    } else { setSaveD('✗ error al guardar', 'err'); }
+    console.error(e);
+  }
+}
+
+// ─── acciones dataset ─────────────────────────────────────────────────────
+function bindDatasetActions() {
+  $('#f-area').onchange = () => { state.d.page = 1; cargarDataset(); };
+  $('#f-estado').onchange = () => { state.d.page = 1; cargarDataset(); };
+  $('#f-dispares').onchange = () => { state.d.page = 1; cargarDataset(); };
+  let qTimer = null;
+  $('#f-q').oninput = () => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => { state.d.page = 1; cargarDataset(); }, 500);
+  };
+  $('#btn-reset-ds').onclick = async () => {
+    if (!confirm('¿Borrar TODAS las decisiones de revisión del dataset?')) return;
+    await api('/api/dataset/reset', { method: 'POST' });
+    state.d.rev = {};
+    state.d.actualizado = null;
+    cargarDataset();
+    setSaveD('', '');
+  };
+  $('#btn-aplicar-ds').onclick = async () => {
+    const decididas = Object.values(state.d.rev).filter(r => r.estado || r.editada).length;
+    if (!decididas) { alert('No hay decisiones que aplicar.'); return; }
+    if (!confirm(`¿Aplicar al dataset? Se retiran las rechazadas y se corrigen ${Object.values(state.d.rev).filter(r => r.editada && r.estado !== 'rechazada').length} editadas. Backup automático.`)) return;
+    const btn = $('#btn-aplicar-ds');
+    btn.textContent = 'aplicando…';
+    btn.disabled = true;
+    try {
+      const res = await api('/api/dataset/aplicar', { method: 'POST' });
+      const pre = $('#reporte-ds-pre');
+      pre.textContent = res.reporte || '(sin salida)';
+      $('#reporte-ds').hidden = false;
+      // recargar todo (el dataset cambió y la revisión se limpió)
+      state.d.rev = {}; state.d.actualizado = null;
+      const meta = await api('/api/lotes');
+      state.lotes = meta.lotes;
+      $('#stat-preguntas').textContent = meta.dataset.total;
+      $('#stat-version').textContent = meta.dataset.version;
+      renderLotes();
+      state.d.page = 1;
+      await cargarDataset();
+    } catch (e) { alert('Error al aplicar: ' + e.message); }
+    btn.textContent = '▶ aplicar al dataset';
+    btn.disabled = false;
+  };
+}
+
+// ══════════════════════════ VISTA LOTES ══════════════════════════
 
 function renderLotes() {
   const c = $('#lotes-chips');
@@ -85,50 +242,31 @@ function renderLotes() {
   }
 }
 
-// ─── carga de lote ────────────────────────────────────────────────────────
 async function cargarLote(n) {
   state.n = n;
-  state.revision = {};
-  state.dirty = false;
+  state.revL = {};
+  state.dirtyL = false;
   renderLotes();
   const data = await api('/api/lote/' + n);
-  state.lote = data.lote;
   state.items = data.preguntas;
-  state.actualizado = data.revision?.actualizado ?? null;
-  for (const r of (data.revision?.preguntas || [])) state.revision[r.idx] = r;
+  state.actualizadoL = data.revision?.actualizado ?? null;
+  for (const r of (data.revision?.preguntas || [])) state.revL[r.idx] = r;
   $('#lote-head').hidden = false;
   $('#filtros').hidden = false;
   $('#integracion').hidden = false;
   $('#lote-titulo').textContent = `Lote ${String(n).padStart(3, '0')} — ${data.lote.area || 'mixta'}`;
   $('#lote-meta').textContent = `generado ${data.lote.generado} · ${state.items.length} preguntas`;
   $('#cmd-integrar').textContent = `python scripts/integrar-lote.py ${n}`;
-  render();
+  renderLotesVista();
 }
 
-// ─── render ───────────────────────────────────────────────────────────────
-function render() {
+function renderLotesVista() {
   const grid = $('#cards');
   grid.innerHTML = '';
-  for (const p of state.items) if (filtrar(p)) grid.appendChild(renderCard(p));
-  renderProgreso();
-}
-
-function filtrar(p) {
-  const est = state.revision[p.idx]?.estado || null;
-  const errs = [...(p.errores_js || []), ...(p.validacion || [])];
-  switch (state.filtro) {
-    case 'pendientes': return est === null;
-    case 'aprobadas': return est === 'aprobada';
-    case 'rechazadas': return est === 'rechazada';
-    case 'errores': return errs.length > 0;
-    default: return true;
-  }
-}
-
-function renderProgreso() {
+  for (const p of state.items) if (filtrarL(p)) grid.appendChild(renderCard(p, ctxL));
   let ap = 0, re = 0, ed = 0;
   for (const p of state.items) {
-    const r = state.revision[p.idx];
+    const r = state.revL[p.idx];
     if (r?.estado === 'aprobada') ap++;
     if (r?.estado === 'rechazada') re++;
     if (r?.editada) ed++;
@@ -138,20 +276,107 @@ function renderProgreso() {
   $('#prog-nums').textContent = `${ap}✓ aprobadas · ${re}✗ rechazadas · ${ed}✎ editadas · ${tot - ap - re} pendientes`;
 }
 
-function renderCard(p) {
-  const cur = textos(p);
-  const r0 = state.revision[p.idx];
-  const chipEst = r0?.estado || (r0?.editada ? 'editada' : null);
+function filtrarL(p) {
+  const est = state.revL[p.idx]?.estado || null;
+  const errs = [...(p.errores_js || []), ...(p.validacion || [])];
+  switch (state.filtroL) {
+    case 'pendientes': return est === null;
+    case 'aprobadas': return est === 'aprobada';
+    case 'rechazadas': return est === 'rechazada';
+    case 'errores': return errs.length > 0;
+    default: return true;
+  }
+}
+
+const ctxL = {
+  getRev: p => revL(p.idx),
+  textos: p => textos(p, revL),
+  chip: p => { const r = revL(p.idx); return r?.estado || (r?.editada ? 'editada' : null); },
+  save: scheduleSaveL,
+};
+
+let saveTimerL = null;
+function scheduleSaveL() {
+  state.dirtyL = true;
+  setSaveL('guardando…', '');
+  clearTimeout(saveTimerL);
+  saveTimerL = setTimeout(guardarLote, 800);
+}
+function setSaveL(txt, cls) {
+  const s = $('#save-state');
+  s.textContent = txt;
+  s.className = 'save-state' + (cls ? ' ' + cls : '');
+}
+async function guardarLote() {
+  if (!state.dirtyL || !state.n) return;
+  const filas = state.items.map(p => {
+    const r = state.revL[p.idx] || {};
+    return {
+      idx: p.idx, entrada_id: p.entrada_id, estado: r.estado ?? null,
+      editada: r.editada ?? false, pregunta: r.pregunta ?? null,
+      opciones: r.opciones ?? null, indice_correcta: r.indice_correcta ?? null,
+      explicacion: r.explicacion ?? null, nota: r.nota ?? '',
+    };
+  });
+  try {
+    const res = await api('/api/lote/' + state.n, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_actualizado: state.actualizadoL ?? null, preguntas: filas }),
+    });
+    state.actualizadoL = res.actualizado;
+    state.dirtyL = false;
+    setSaveL('✓ guardado ' + new Date(res.actualizado).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'ok');
+    renderLotesVista();
+  } catch (e) {
+    const msg = String(e.message);
+    if (msg.includes('cambió en otro lado')) {
+      setSaveL('⚠ el lote cambió en otro lado — recargando…', 'err');
+      setTimeout(() => cargarLote(state.n), 1200);
+    } else { setSaveL('✗ error al guardar', 'err'); }
+    console.error(e);
+  }
+}
+
+function bindLotesActions() {
+  $('#btn-reset').onclick = async () => {
+    if (!state.n || !confirm('¿Borrar la revisión guardada del lote y volver todo a pendiente?')) return;
+    await api('/api/lote/' + state.n + '/reset', { method: 'POST' });
+    state.revL = {};
+    renderLotesVista();
+    setSaveL('', '');
+  };
+  $('#btn-integrar').onclick = () => {
+    const cmd = $('#cmd-integrar').textContent;
+    navigator.clipboard?.writeText(cmd);
+    $('#btn-integrar').textContent = '✓ copiado';
+    setTimeout(() => { $('#btn-integrar').textContent = '▶ integrar'; }, 1200);
+    document.querySelector('.integracion').scrollIntoView({ behavior: 'smooth' });
+  };
+  document.querySelectorAll('#filtros .filtro').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('#filtros .filtro').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      state.filtroL = b.dataset.f;
+      renderLotesVista();
+    };
+  });
+}
+
+// ══════════════════════════ TARJETA (compartida) ══════════════════════════
+
+function renderCard(p, ctx) {
+  const chipEst = ctx.chip(p);
   const card = el('article', 'card ' + (chipEst || 'pendiente'));
 
-  // head
   const head = el('div', 'card-head');
-  head.appendChild(el('span', 'card-num', `${String(p.idx + 1).padStart(2, '0')} · ${p.entrada_id}`));
+  const num = state.vista === 'dataset' ? p.id : String(p.idx + 1).padStart(2, '0');
+  head.appendChild(el('span', 'card-num', num + (state.vista === 'dataset' ? ' · ' + (p.entrada_id || '') : ' · ' + p.entrada_id)));
   const badges = el('div', 'badges');
-  badges.appendChild(el('span', 'badge tipo', p.termino));
+  badges.appendChild(el('span', 'badge tipo', p.termino || '?'));
   badges.appendChild(el('span', 'badge', p.tipo));
   badges.appendChild(el('span', 'badge', `área ${p.area || '?'}`));
-  badges.appendChild(el('span', 'badge', `d${p.dificultad ?? 2}`));
+  if (p.dificultad !== undefined) badges.appendChild(el('span', 'badge', `d${p.dificultad}`));
   if (p.juez) badges.appendChild(el('span', 'badge juez', `juez ${p.juez.global ?? '?'}/5`));
   if (p.semantica?.accion === 'eliminar') badges.appendChild(el('span', 'badge sem-eliminar', `matriz ✗: ${p.semantica.razon || ''}`));
   if (p.semantica?.accion === 'dudosa') badges.appendChild(el('span', 'badge sem-dudosa', `dudosa: ${p.semantica.razon || ''}`));
@@ -161,17 +386,15 @@ function renderCard(p) {
   head.appendChild(chip);
   card.appendChild(head);
 
-  // campos
   const body = el('div');
-  body.appendChild(campoPregunta(p, card));
-  for (let i = 0; i < 4; i++) body.appendChild(campoOpcion(p, i, card));
-  body.appendChild(campoExplicacion(p, card));
+  body.appendChild(campoPregunta(p, ctx, card));
+  for (let i = 0; i < 4; i++) body.appendChild(campoOpcion(p, i, ctx, card));
+  body.appendChild(campoExplicacion(p, ctx, card));
 
-  // errores en vivo
   const errsBox = el('div', 'errs');
   card._errsBox = errsBox;
   body.appendChild(errsBox);
-  actualizarErrores(p, card);
+  actualizarErrores(p, ctx, card);
 
   // fuente
   const det = el('details', 'fuente');
@@ -193,8 +416,8 @@ function renderCard(p) {
   const nota = el('div', 'nota');
   const notaIn = document.createElement('input');
   notaIn.placeholder = 'nota (para el redactor, ej. «muy fácil»)';
-  notaIn.value = state.revision[p.idx]?.nota || '';
-  notaIn.oninput = () => { rev(p.idx).nota = notaIn.value; scheduleSave(); };
+  notaIn.value = ctx.getRev(p).nota || '';
+  notaIn.oninput = () => { ctx.getRev(p).nota = notaIn.value; ctx.save(); };
   nota.appendChild(notaIn);
   foot.appendChild(nota);
 
@@ -202,17 +425,29 @@ function renderCard(p) {
   const bNull = el('button', 'mini null', '—');
   bNull.title = 'volver a pendiente';
   bNull.onclick = () => {
-    rev(p.idx).estado = null;
-    const est = rev(p.idx).editada ? 'editada' : null;
+    ctx.getRev(p).estado = null;
+    const est = ctx.chip(p);
     card.className = 'card pendiente';
     chip.textContent = chipTexto(est);
     chip.className = 'estado-chip ' + (est || 'pendiente');
-    scheduleSave();
+    ctx.save();
   };
   const bOk = el('button', 'mini ok', '✓ aprobar');
-  bOk.onclick = () => { rev(p.idx).estado = 'aprobada'; card.className = 'card aprobada'; chip.textContent = '✓ aprobada'; chip.className = 'estado-chip aprobada'; scheduleSave(); };
+  bOk.onclick = () => {
+    ctx.getRev(p).estado = 'aprobada';
+    card.className = 'card aprobada';
+    chip.textContent = '✓ aprobada';
+    chip.className = 'estado-chip aprobada';
+    ctx.save();
+  };
   const bBad = el('button', 'mini bad', '✗ rechazar');
-  bBad.onclick = () => { rev(p.idx).estado = 'rechazada'; card.className = 'card rechazada'; chip.textContent = '✗ rechazada'; chip.className = 'estado-chip rechazada'; scheduleSave(); };
+  bBad.onclick = () => {
+    ctx.getRev(p).estado = 'rechazada';
+    card.className = 'card rechazada';
+    chip.textContent = '✗ rechazada';
+    chip.className = 'estado-chip rechazada';
+    ctx.save();
+  };
   acc.append(bNull, bOk, bBad);
   foot.appendChild(acc);
   card.appendChild(foot);
@@ -226,139 +461,100 @@ function chipTexto(est) {
     : 'pendiente';
 }
 
-function campoPregunta(p, card) {
+function campoPregunta(p, ctx, card) {
   const c = el('div', 'campo');
   c.appendChild(el('label', null, 'pregunta'));
   const ta = document.createElement('textarea');
   ta.className = 'pregunta';
   ta.rows = 2;
-  ta.value = textos(p).pregunta;
-  ta.oninput = () => { rev(p.idx).pregunta = ta.value; rev(p.idx).editada = true; actualizarErrores(p, card); scheduleSave(); };
+  ta.value = ctx.textos(p).pregunta;
+  ta.oninput = () => {
+    const r = ctx.getRev(p);
+    r.pregunta = ta.value; r.editada = true;
+    actualizarErrores(p, ctx, card);
+    ctx.save();
+  };
   c.appendChild(ta);
   return c;
 }
 
-function campoOpcion(p, i, card) {
-  const c = el('div', 'opcion' + (i === textos(p).indice_correcta ? ' correcta' : ''));
+function campoOpcion(p, i, ctx, card) {
+  const c = el('div', 'opcion' + (i === ctx.textos(p).indice_correcta ? ' correcta' : ''));
   const radio = document.createElement('input');
   radio.type = 'radio';
-  radio.name = 'opc-' + p.idx;
-  radio.checked = i === textos(p).indice_correcta;
+  radio.name = 'opc-' + (state.vista === 'dataset' ? p.id : p.idx);
+  radio.checked = i === ctx.textos(p).indice_correcta;
   radio.title = 'marcar como correcta';
   radio.onchange = () => {
-    rev(p.idx).indice_correcta = i;
-    rev(p.idx).editada = true;
+    const r = ctx.getRev(p);
+    r.indice_correcta = i; r.editada = true;
     card.querySelectorAll('.opcion').forEach((o, j) => o.classList.toggle('correcta', j === i));
-    scheduleSave();
+    ctx.save();
   };
   c.appendChild(radio);
   c.appendChild(el('span', 'letra', 'ABCD'[i]));
   const ta = document.createElement('textarea');
   ta.rows = 2;
-  ta.value = textos(p).opciones[i];
+  ta.value = ctx.textos(p).opciones[i];
   ta.oninput = () => {
-    const opcs = [...textos(p).opciones];
+    const r = ctx.getRev(p);
+    const opcs = [...ctx.textos(p).opciones];
     opcs[i] = ta.value;
-    rev(p.idx).opciones = opcs;
-    rev(p.idx).editada = true;
-    actualizarErrores(p, card);
-    scheduleSave();
+    r.opciones = opcs; r.editada = true;
+    actualizarErrores(p, ctx, card);
+    ctx.save();
   };
   c.appendChild(ta);
   return c;
 }
 
-function campoExplicacion(p, card) {
+function campoExplicacion(p, ctx, card) {
   const c = el('div', 'campo explicacion');
   c.appendChild(el('label', null, 'explicación (enseña)'));
   const ta = document.createElement('textarea');
   ta.rows = 2;
-  ta.value = textos(p).explicacion;
-  ta.oninput = () => { rev(p.idx).explicacion = ta.value; rev(p.idx).editada = true; actualizarErrores(p, card); scheduleSave(); };
+  ta.value = ctx.textos(p).explicacion;
+  ta.oninput = () => {
+    const r = ctx.getRev(p);
+    r.explicacion = ta.value; r.editada = true;
+    actualizarErrores(p, ctx, card);
+    ctx.save();
+  };
   c.appendChild(ta);
   return c;
 }
 
-function actualizarErrores(p, card) {
-  const errs = validarReglas(textos(p), { termino: p.termino, base: p.fuente_enc?.base });
+function actualizarErrores(p, ctx, card) {
+  const errs = validarReglas(ctx.textos(p), { termino: p.termino, base: p.fuente_enc?.base });
   const todos = [...new Set([...errs, ...(p.validacion || [])])];
   card._errsBox.innerHTML = '';
   for (const e of todos) card._errsBox.appendChild(el('span', 'err-tag', e));
 }
 
-// ─── autosave ─────────────────────────────────────────────────────────────
-let saveTimer = null;
-function scheduleSave() {
-  state.dirty = true;
-  setSave('guardando…', '');
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(guardar, 800);
+// ══════════════════════════ TABS ══════════════════════════
+function bindTabs() {
+  $('#tab-dataset').onclick = () => { setVista('dataset'); };
+  $('#tab-lotes').onclick = () => { setVista('lotes'); };
 }
-
-function setSave(txt, cls) {
-  const s = $('#save-state');
-  s.textContent = txt;
-  s.className = 'save-state' + (cls ? ' ' + cls : '');
-}
-
-async function guardar() {
-  if (!state.dirty || !state.n) return;
-  // serializa TODAS las filas del lote (las nunca tocadas quedan con estado null y textos originales)
-  const filas = state.items.map(p => {
-    const r = state.revision[p.idx] || {};
-    return {
-      idx: p.idx, entrada_id: p.entrada_id, estado: r.estado ?? null,
-      editada: r.editada ?? false, pregunta: r.pregunta ?? null,
-      opciones: r.opciones ?? null, indice_correcta: r.indice_correcta ?? null,
-      explicacion: r.explicacion ?? null, nota: r.nota ?? '',
-    };
-  });
-  try {
-    const res = await api('/api/lote/' + state.n, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base_actualizado: state.actualizado ?? null, preguntas: filas }),
-    });
-    state.actualizado = res.actualizado;
-    state.dirty = false;
-    setSave('✓ guardado ' + new Date(res.actualizado).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'ok');
-    renderProgreso();
-  } catch (e) {
-    const msg = String(e.message);
-    if (msg.includes('cambió en otro lado')) {
-      setSave('⚠ el lote cambió en otro lado — recargando…', 'err');
-      setTimeout(() => cargarLote(state.n), 1200);
-    } else {
-      setSave('✗ error al guardar', 'err');
-    }
-    console.error(e);
+function setVista(v) {
+  state.vista = v;
+  $('#tab-dataset').classList.toggle('active', v === 'dataset');
+  $('#tab-lotes').classList.toggle('active', v === 'lotes');
+  $('#vista-dataset').hidden = v !== 'dataset';
+  $('#vista-lotes').hidden = v !== 'lotes';
+  if (v === 'dataset') {
+    state.d.page = 1;
+    cargarDataset();
+  } else if (state.n === null && state.lotes.length) {
+    const activo = state.lotes.find(l => l.pendientes > 0)
+      || state.lotes.find(l => l.estado === 'revision')
+      || state.lotes.find(l => l.estado !== 'integrado')
+      || state.lotes[state.lotes.length - 1];
+    cargarLote(activo.n);
   }
 }
 
-// ─── acciones globales ────────────────────────────────────────────────────
-$('#btn-reset').onclick = async () => {
-  if (!state.n || !confirm('¿Borrar la revisión guardada del lote y volver todo a pendiente?')) return;
-  await api('/api/lote/' + state.n + '/reset', { method: 'POST' });
-  state.revision = {};
-  render();
-  setSave('', '');
-};
-
-$('#btn-integrar').onclick = () => {
-  const cmd = $('#cmd-integrar').textContent;
-  navigator.clipboard?.writeText(cmd);
-  $('#btn-integrar').textContent = '✓ copiado';
-  setTimeout(() => { $('#btn-integrar').textContent = '▶ integrar'; }, 1200);
-  document.querySelector('.integracion').scrollIntoView({ behavior: 'smooth' });
-};
-
-document.querySelectorAll('.filtro').forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll('.filtro').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    state.filtro = b.dataset.f;
-    render();
-  };
-});
-
+bindTabs();
+bindDatasetActions();
+bindLotesActions();
 init();
