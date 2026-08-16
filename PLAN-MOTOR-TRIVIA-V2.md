@@ -208,3 +208,47 @@ Objetivo: generar preguntas NUEVAS de calidad editorial (no plantilla).
 2. ¿El pool objetivo final: ~1500 preguntas buenas (más que hoy) o con 1127 filtradas alcanza?
 3. ¿Aceptas reescribir/retirar las ~219 con prefijo "Término:" en lotes sucesivos?
 4. ¿Habilitamos la telemetría por pregunta en el lobby (toca Supabase/lobby) o la dejamos para después?
+
+---
+
+## ESTADO DE EJECUCIÓN (2026-08-16) — resumen de cierre
+
+**FASE 0 ✅ Reconocimiento** — 333 entradas, 1275 preg v4.0.1, Python 3.11.
+
+**FASE 1 ✅ Filtro semántico** — `Trivia/scripts/filtrar-semantica.py` (dry-run/--apply/--check).
+176 absurdas eliminadas en total: 144 reglas + 4 dudosas hook/bassline (aprobadas) + 28 por
+fix de ABSTRACTOS (los ids reales de la enciclopedia son slugs sin tilde: 'metrica' ≠ 'métrica')
++ 3 dudosas street/realness (aprobadas). Dataset 4.1.0 → 4.2.1. El ¿dónde? posicional se conserva.
+
+**FASE 2 ✅ Matriz W×tipo en el generador** — `Enciclopedia HH/scripts/generar_trivia.py`:
+CUANDO_OK/DONDE_OK por tipo + regla del verbo (posicional y "se creó" siempre válidos) +
+verbos honestos por tipo + aplicada también a manuales. Corrida de prueba: 918 preg,
+calidad 10/10, 0 absurdas de clases prohibidas.
+
+**FASE 3 ✅ Redactor LLM** — `Trivia/scripts/prompts/redactor.md` + `juez.md` +
+`Trivia/scripts/generar-lote.py` (reglas duras: longitudes, paralelismo por categoría
+gramatical, absolutos, delación, grounding con manuales, matriz W×tipo).
+**3 lotes de 50 aprobados por Freddy e integrados** (001: mcing/djing/beatbox/beatmaking/chile;
+002: nacimiento/writing/breaking/música/cultura; 003: mundo/entidades/restantes).
+
+**FASE 4 ✅ LLM-juez** — rúbrica 5 dimensiones ×1-5, umbral ≥4. 150/150 pasan (globales 4.6-5.0).
+Muestra 200 del dataset: detectó el bug de ABSTRACTOS + ~48 preguntas con largos dispares
+(candidatas a reescritura en lotes futuros) + 5 chilenas que delatan la respuesta.
+
+**FASE 5 ✅ Curaduría + integración** — `Trivia/scripts/integrar-lote.py`: dedup normalizado
+contra el pool (manuales ya existentes se omiten), metadata completa, ids pXXXXX nuevos.
+**Dataset final: 1235 preguntas** (139 del redactor-LLM, source_type 'redactor-llm'),
+QA 10/10, 0 clases prohibidas, lint+build OK.
+
+**FASE 6 ⏸️ Telemetría por pregunta (lobby/Supabase)** — PENDIENTE de decisión de Freddy.
+Se pospone sin bloquear lo demás (plan §7).
+
+**FASE 7 🔄 Cierre** — QA final: invariantes 10/10 ✓, dev server sirve dataset 4.4.0 ✓,
+QA visual-jugado con subagente browser en curso (dev server en localhost:5179).
+
+**Commits locales (sin push):** Trivia `e378f28` (filtro), `9bd85d3` (fix ABSTRACTOS),
+`483137e` (redactor+validador), `d0d7a3d` (integrar-lote), `0cfd580` (lote 002), `82e3b02`
+(fix realineación), `f707945` (lote 003) · Enciclopedia `96eb28c` (matriz), `0f8ed58` (fix ABSTRACTOS).
+
+**Pendientes sugeridos:** reescritura de ~48 con largos dispares + 5 chilenas delatoras
+(vía lotes redactor-LLM); decisión Fase 6; push/deploy SOLO con orden de Freddy.
