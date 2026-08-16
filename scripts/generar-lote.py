@@ -75,7 +75,9 @@ NUMERALES = {'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho',
              'nueve', 'diez', 'once', 'doce', 'veinte', 'treinta', 'cuarenta',
              'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa', 'cien',
              'ciento', 'primera', 'primero', 'segunda', 'segundo', 'tercera',
-             'tercero', 'un', 'una', 'unos', 'unas'}
+             'tercero'}
+# ojo: 'un/una/unos/unas' NO van en NUMERALES → son artículos como primer
+# token de una opción ("Un álbum...", "Una sección...")
 ARTICULOS = {'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas'}
 
 
