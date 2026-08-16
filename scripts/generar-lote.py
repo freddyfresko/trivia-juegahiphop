@@ -114,7 +114,9 @@ def validar(p, e):
         errs.append('pregunta no termina con ?')
     if ABSOLUTOS.search(q):
         errs.append('absolutos en la pregunta (siempre/nunca/solo/todas)')
-    if re.search(r'\bno\b', q.lower()):
+    # negación "no": ignorar títulos entre «…» ("¿Qué hizo X con «No Love Deep Web»?")
+    q_sin_titulos = re.sub(r'«[^»]*»', '', q)
+    if re.search(r'\bno\b', q_sin_titulos.lower()):
         errs.append('negación "no" en la pregunta (stem negativo)')
 
     if len(opc) != 4:
