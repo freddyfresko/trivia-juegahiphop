@@ -59,7 +59,10 @@ async function init() {
     $('#stat-enc').textContent = data.enciclopedia;
     $('#stat-version').textContent = data.dataset.version;
     renderLotes();
-    const activo = state.lotes.find(l => l.estado !== 'integrado') || state.lotes[0];
+    // lote activo: el que tiene revisión a medias > último no integrado > último
+    const activo = state.lotes.find(l => l.estado === 'revision')
+      || state.lotes.find(l => l.estado !== 'integrado')
+      || state.lotes[state.lotes.length - 1];
     if (activo) cargarLote(activo.n);
   } catch (e) { console.error(e); }
 }
@@ -84,10 +87,12 @@ function renderLotes() {
 async function cargarLote(n) {
   state.n = n;
   state.revision = {};
+  state.dirty = false;
   renderLotes();
   const data = await api('/api/lote/' + n);
   state.lote = data.lote;
   state.items = data.preguntas;
+  state.actualizado = data.revision?.actualizado ?? null;
   for (const r of (data.revision?.preguntas || [])) state.revision[r.idx] = r;
   $('#lote-head').hidden = false;
   $('#filtros').hidden = false;
@@ -133,7 +138,9 @@ function renderProgreso() {
 
 function renderCard(p) {
   const cur = textos(p);
-  const card = el('article', 'card ' + (state.revision[p.idx]?.estado || 'pendiente'));
+  const r0 = state.revision[p.idx];
+  const chipEst = r0?.estado || (r0?.editada ? 'editada' : null);
+  const card = el('article', 'card ' + (chipEst || 'pendiente'));
 
   // head
   const head = el('div', 'card-head');
@@ -148,7 +155,7 @@ function renderCard(p) {
   if (p.semantica?.accion === 'dudosa') badges.appendChild(el('span', 'badge sem-dudosa', `dudosa: ${p.semantica.razon || ''}`));
   if ((p.validacion || []).length) badges.appendChild(el('span', 'badge err', `⚠ ${p.validacion.length} reglas`));
   head.appendChild(badges);
-  const chip = el('span', 'estado-chip ' + (state.revision[p.idx]?.estado || 'pendiente'), chipTexto(state.revision[p.idx]?.estado));
+  const chip = el('span', 'estado-chip ' + (chipEst || 'pendiente'), chipTexto(chipEst));
   head.appendChild(chip);
   card.appendChild(head);
 
@@ -192,7 +199,14 @@ function renderCard(p) {
   const acc = el('div', 'acciones');
   const bNull = el('button', 'mini null', '—');
   bNull.title = 'volver a pendiente';
-  bNull.onclick = () => { rev(p.idx).estado = null; card.className = 'card pendiente'; chip.textContent = 'pendiente'; chip.className = 'estado-chip pendiente'; scheduleSave(); };
+  bNull.onclick = () => {
+    rev(p.idx).estado = null;
+    const est = rev(p.idx).editada ? 'editada' : null;
+    card.className = 'card pendiente';
+    chip.textContent = chipTexto(est);
+    chip.className = 'estado-chip ' + (est || 'pendiente');
+    scheduleSave();
+  };
   const bOk = el('button', 'mini ok', '✓ aprobar');
   bOk.onclick = () => { rev(p.idx).estado = 'aprobada'; card.className = 'card aprobada'; chip.textContent = '✓ aprobada'; chip.className = 'estado-chip aprobada'; scheduleSave(); };
   const bBad = el('button', 'mini bad', '✗ rechazar');
@@ -203,7 +217,12 @@ function renderCard(p) {
   return card;
 }
 
-function chipTexto(est) { return est === 'aprobada' ? '✓ aprobada' : est === 'rechazada' ? '✗ rechazada' : 'pendiente'; }
+function chipTexto(est) {
+  return est === 'aprobada' ? '✓ aprobada'
+    : est === 'rechazada' ? '✗ rechazada'
+    : est === 'editada' ? '✎ editada'
+    : 'pendiente';
+}
 
 function campoPregunta(p, card) {
   const c = el('div', 'campo');
@@ -296,12 +315,22 @@ async function guardar() {
     const res = await api('/api/lote/' + state.n, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preguntas: filas }),
+      body: JSON.stringify({ base_actualizado: state.actualizado ?? null, preguntas: filas }),
     });
+    state.actualizado = res.actualizado;
     state.dirty = false;
     setSave('✓ guardado ' + new Date(res.actualizado).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'ok');
     renderProgreso();
-  } catch (e) { setSave('✗ error al guardar', 'err'); console.error(e); }
+  } catch (e) {
+    const msg = String(e.message);
+    if (msg.includes('cambió en otro lado')) {
+      setSave('⚠ el lote cambió en otro lado — recargando…', 'err');
+      setTimeout(() => cargarLote(state.n), 1200);
+    } else {
+      setSave('✗ error al guardar', 'err');
+    }
+    console.error(e);
+  }
 }
 
 // ─── acciones globales ────────────────────────────────────────────────────

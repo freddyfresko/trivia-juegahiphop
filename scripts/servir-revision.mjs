@@ -214,6 +214,13 @@ const server = http.createServer(async (req, res) => {
       const n = parseInt(m[1], 10);
       const body = await cuerpo(req);
       if (!Array.isArray(body.preguntas)) return json(res, 400, { error: 'falta preguntas[]' });
+      // protección de concurrencia: si otro cliente guardó desde que este
+      // cliente cargó el lote → 409 (el front avisa y recarga)
+      const revExistente = existsSync(revisionPath(n))
+        ? JSON.parse(readFileSync(revisionPath(n), 'utf8')) : null;
+      if (revExistente && revExistente.actualizado !== (body.base_actualizado ?? null)) {
+        return json(res, 409, { error: 'el lote cambió en otro lado', actualizado: revExistente.actualizado });
+      }
       const rev = {
         lote: n,
         actualizado: new Date().toISOString(),
