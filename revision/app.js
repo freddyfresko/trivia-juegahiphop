@@ -59,8 +59,10 @@ async function init() {
     $('#stat-enc').textContent = data.enciclopedia;
     $('#stat-version').textContent = data.dataset.version;
     renderLotes();
-    // lote activo: el que tiene revisión a medias > último no integrado > último
-    const activo = state.lotes.find(l => l.estado === 'revision')
+    // lote activo: primero con pendientes en su revisión > revisión a medias
+    // > último no integrado > último
+    const activo = state.lotes.find(l => l.pendientes > 0)
+      || state.lotes.find(l => l.estado === 'revision')
       || state.lotes.find(l => l.estado !== 'integrado')
       || state.lotes[state.lotes.length - 1];
     if (activo) cargarLote(activo.n);

@@ -173,6 +173,7 @@ const server = http.createServer(async (req, res) => {
           n, area: lote.area, generado: lote.generado, total: lote.preguntas.length,
           con_errores: lote.preguntas.filter(q => (q.validacion || []).length).length,
           estado: estadoLote(n, !!rev), aprobadas, rechazadas, editadas,
+          pendientes: rev ? rev.preguntas.filter(r => !r.estado).length : 0,
           actualizado: rev ? rev.actualizado : null,
         };
       });
