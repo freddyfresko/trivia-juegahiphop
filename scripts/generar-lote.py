@@ -193,6 +193,7 @@ def main():
         errs = validar(p, e)
         item = {
             'entrada_id': p['entrada_id'],
+            'id_original': p.get('id_original'),
             'termino': e.get('termino', ''),
             'tipo': e.get('tipo', '?'),
             'area': e.get('categoria', area),
