@@ -136,6 +136,7 @@ body {
 .badge.err { color: #fca5a5; border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.08); }
 .badge.sem-eliminar { color: #fca5a5; border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.08); }
 .badge.sem-dudosa { color: #fde68a; border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.08); }
+.badge.plantilla { color: #fde68a; border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.1); }
 
 .estado-chip {
   font-size: 12px; font-weight: 700; padding: 4px 14px; border-radius: 999px; white-space: nowrap;

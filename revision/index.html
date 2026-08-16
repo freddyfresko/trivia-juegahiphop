@@ -43,7 +43,12 @@
           <option value="editada">✎ Editadas</option>
         </select>
         <input id="f-q" placeholder="buscar pregunta, término o id…" />
-        <label class="chk"><input type="checkbox" id="f-dispares" /> solo largos dispares</label>
+        <select id="f-sospechosas" title="Filtrar preguntas sospechosas del motor de plantilla">
+          <option value="">Todas</option>
+          <option value="plantilla">⚠ Con señales de plantilla</option>
+          <option value="dispares">Solo largos dispares</option>
+          <option value="matriz">✗ Viola matriz W×tipo</option>
+        </select>
         <span class="save-state" id="save-ds"></span>
         <button class="btn ghost" id="btn-reset-ds" title="Borrar todas las decisiones de revisión">↺ reset</button>
         <button class="btn" id="btn-aplicar-ds" title="Retira las rechazadas y aplica tus correcciones al dataset">▶ aplicar al dataset</button>

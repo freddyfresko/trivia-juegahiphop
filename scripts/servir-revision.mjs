@@ -27,7 +27,34 @@ const PYTHON = process.env.PYTHON || 'python';
 
 const PORT = parseInt(process.argv[process.argv.indexOf('--port') + 1], 10) || 5187;
 
-// ─── cache ────────────────────────────────────────────────────────────────
+// señales de pregunta hecha por plantilla (motor anterior)
+const PAT_PREFIJO = /^(?:Sobre\s+«|Término:\s*|«[^»]+»\s*:\s*|[\wáéíóúñÁÉÍÓÚÑüÜ .\-]+:\s*¿)/;
+const PAT_ABSOLUTO = /\b(siempre|nunca|jamás|todas las anteriores|ninguna de las anteriores)\b/i;
+const PAT_GENERICA = /^¿Qué es (el|la|los|las) [a-záéíóúñ]+\??$/i;
+
+function senalesPlantilla(q) {
+  const s = [];
+  if (PAT_PREFIJO.test(q.pregunta || '')) s.push('prefijo');
+  if (PAT_ABSOLUTO.test((q.pregunta || '') + ' ' + (q.opciones || []).join(' '))) s.push('absoluto');
+  if (PAT_GENERICA.test(q.pregunta || '')) s.push('generica');
+  const largos = (q.opciones || []).map(o => String(o || '').length);
+  if (largos.length > 1 && Math.max(...largos) / Math.max(Math.min(...largos), 1) > 2.2) s.push('largos dispares');
+  return s;
+}
+
+// semántica W×tipo de TODO el dataset (cache 5 min) — badges + filtro matriz
+let _semDataset = null;
+function semDataset(data) {
+  if (_semDataset && Date.now() - _semDataset.ts < 300_000) return Promise.resolve(_semDataset.payload);
+  return clasificarPayload('dataset-full', data.preguntas.map(q => ({
+    idx: q.id, pregunta: q.pregunta, entrada_id: q.entrada_id, termino: q.termino,
+  }))).then(out => {
+    _semDataset = { ts: Date.now(), payload: out };
+    return out;
+  });
+}
+
+// ─── topbar ───────────────────────────────────────────────────────────────
 let _enc = null, _encMtime = 0, _estado = null;
 const _semCache = new Map(); // lote → {mtime, payload}
 
@@ -256,11 +283,12 @@ const server = http.createServer(async (req, res) => {
         ? JSON.parse(readFileSync(REVISION_DATASET, 'utf8')) : null;
       const porRev = {};
       if (rev) for (const r of rev.preguntas) porRev[r.id] = r;
+      const sem = await semDataset(data);
       let lista = data.preguntas;
       const area = url.searchParams.get('area');
       const estado = url.searchParams.get('estado');
       const q = (url.searchParams.get('q') || '').toLowerCase();
-      const dispares = url.searchParams.get('dispares') === '1';
+      const sospechosas = url.searchParams.get('sospechosas') || '';
       if (area) lista = lista.filter(x => (x.area || '') === area);
       if (estado) lista = lista.filter(x => {
         const r = porRev[x.id];
@@ -268,23 +296,27 @@ const server = http.createServer(async (req, res) => {
         return e === estado;
       });
       if (q) lista = lista.filter(x => ((x.pregunta || '') + ' ' + (x.termino || '') + ' ' + (x.id || '')).toLowerCase().includes(q));
-      if (dispares) lista = lista.filter(x => {
-        const ls = (x.opciones || []).map(o => String(o || '').length);
-        if (ls.length < 2) return false;
-        return Math.max(...ls) / Math.max(Math.min(...ls), 1) > 2.2;
-      });
+      if (sospechosas === 'plantilla') {
+        lista = lista.filter(x => senalesPlantilla(x).length > 0);
+      } else if (sospechosas === 'dispares') {
+        lista = lista.filter(x => {
+          const ls = (x.opciones || []).map(o => String(o || '').length);
+          if (ls.length < 2) return false;
+          return Math.max(...ls) / Math.max(Math.min(...ls), 1) > 2.2;
+        });
+      } else if (sospechosas === 'matriz') {
+        lista = lista.filter(x => (sem[x.id]?.accion || 'quedar') !== 'quedar');
+      }
       const page = Math.max(parseInt(url.searchParams.get('page') || '1', 10), 1);
       const ps = Math.min(parseInt(url.searchParams.get('ps') || '50', 10), 200);
       const total_filtrado = lista.length;
       const pagina = lista.slice((page - 1) * ps, page * ps);
       const ent = await entradas();
-      const sem = await clasificarPayload('d:' + area + ':' + estado + ':' + q + ':' + dispares + ':' + page, pagina.map(x => ({
-        idx: x.id, pregunta: x.pregunta, entrada_id: x.entrada_id, termino: x.termino,
-      })));
       const items = pagina.map(q => {
         const e = ent[q.entrada_id] || {};
         return {
           ...q,
+          senales_plantilla: senalesPlantilla(q),
           errores_js: Validador.validar(q, { termino: e.termino || q.termino || '', base: e.base }),
           semantica: sem[q.id] || { w: '?', accion: 'quedar' },
           fuente_enc: e,

@@ -78,13 +78,13 @@ function filtrosDS() {
     area: $('#f-area').value,
     estado: $('#f-estado').value,
     q: $('#f-q').value.trim(),
-    dispares: $('#f-dispares').checked ? '1' : '',
+    sospechosas: $('#f-sospechosas').value,
   };
 }
 
 async function cargarDataset() {
   const f = filtrosDS();
-  const qs = new URLSearchParams({ area: f.area, estado: f.estado, q: f.q, dispares: f.dispares, page: state.d.page, ps: state.d.pageSize });
+  const qs = new URLSearchParams({ area: f.area, estado: f.estado, q: f.q, sospechosas: f.sospechosas, page: state.d.page, ps: state.d.pageSize });
   const data = await api('/api/dataset?' + qs);
   state.d.total = data.total;
   state.d.totalF = data.total_filtrado;
@@ -183,7 +183,7 @@ async function guardarDataset() {
 function bindDatasetActions() {
   $('#f-area').onchange = () => { state.d.page = 1; cargarDataset(); };
   $('#f-estado').onchange = () => { state.d.page = 1; cargarDataset(); };
-  $('#f-dispares').onchange = () => { state.d.page = 1; cargarDataset(); };
+  $('#f-sospechosas').onchange = () => { state.d.page = 1; cargarDataset(); };
   let qTimer = null;
   $('#f-q').oninput = () => {
     clearTimeout(qTimer);
@@ -378,6 +378,7 @@ function renderCard(p, ctx) {
   badges.appendChild(el('span', 'badge', `área ${p.area || '?'}`));
   if (p.dificultad !== undefined) badges.appendChild(el('span', 'badge', `d${p.dificultad}`));
   if (p.juez) badges.appendChild(el('span', 'badge juez', `juez ${p.juez.global ?? '?'}/5`));
+  if (p.senales_plantilla?.length) badges.appendChild(el('span', 'badge plantilla', `⚠ plantilla: ${p.senales_plantilla.join(', ')}`));
   if (p.semantica?.accion === 'eliminar') badges.appendChild(el('span', 'badge sem-eliminar', `matriz ✗: ${p.semantica.razon || ''}`));
   if (p.semantica?.accion === 'dudosa') badges.appendChild(el('span', 'badge sem-dudosa', `dudosa: ${p.semantica.razon || ''}`));
   if ((p.validacion || []).length) badges.appendChild(el('span', 'badge err', `⚠ ${p.validacion.length} reglas`));
