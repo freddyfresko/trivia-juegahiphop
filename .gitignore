@@ -10,3 +10,6 @@ dev-dist/
 .firebase/
 
 scripts/backups/
+
+# reportes/lotes de revisión (temporales)
+lotes/
