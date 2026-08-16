@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════
-   TRIVIA HIP HOP — Design System Tokens
-   Stone + Orange (estética del lobby JuegaHipHop)
+   TRIVIA HIP HOP — Design System Tokens v2
+   Estética "pro": stone oscuro + naranja, superficies glass,
+   highlights cápsula (sombra pegatina), ambiente con glows.
    ═══════════════════════════════════════════════════════ */
 
 @theme {
@@ -21,11 +22,16 @@
   --color-orange-800: #9a3412;
   --color-orange-900: #7c2d12;
 
+  /* ─── Ámbar — secundario de gradientes ─── */
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
+
   /* ─── Fondos / superficies stone oscuro ─── */
-  --color-bg-primary: #0a0a0a;
+  --color-bg-primary: #080808;
   --color-bg-card: #141414;
   --color-bg-elevated: #1c1c1c;
-  --color-bg-surface: #121212;
+  --color-bg-surface: #101010;
 
   /* ─── Texto ─── */
   --color-text-primary: #ffffff;
@@ -37,44 +43,62 @@
   --color-border-card: #333333;
 
   /* ─── Radii ─── */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 26px;
   --radius-pill: 9999px;
 
   /* ─── Sombras ─── */
-  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.25);
-  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 2px 10px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.5);
   --shadow-glow-orange: 0 4px 20px rgba(249, 115, 22, 0.25);
+  --shadow-glow-strong: 0 0 28px rgba(249, 115, 22, 0.4);
+  /* Sombra "pegatina" para highlights cápsula */
+  --shadow-sticker: 0 2px 0 rgba(0, 0, 0, 0.45), 0 8px 22px rgba(249, 115, 22, 0.35);
 }
 
+/* ═══ Ambiente: fondo con glows + textura + grano de película ═══ */
 body {
   margin: 0;
   height: 100dvh;
   background-color: var(--color-bg-primary);
-  /* Textura sutil de ladrillo (herencia del lobby) */
   background-image:
+    radial-gradient(1100px 480px at 50% -12%, rgba(249, 115, 22, 0.10), transparent 62%),
+    radial-gradient(820px 460px at 88% 112%, rgba(249, 115, 22, 0.055), transparent 60%),
+    radial-gradient(640px 380px at 6% 96%, rgba(251, 191, 36, 0.045), transparent 60%),
     repeating-linear-gradient(
       0deg,
       transparent,
       transparent 58px,
-      rgba(255, 255, 255, 0.018) 58px,
-      rgba(255, 255, 255, 0.018) 60px
+      rgba(255, 255, 255, 0.014) 58px,
+      rgba(255, 255, 255, 0.014) 60px
     ),
     repeating-linear-gradient(
       90deg,
       transparent,
       transparent 118px,
-      rgba(255, 255, 255, 0.012) 118px,
-      rgba(255, 255, 255, 0.012) 120px
+      rgba(255, 255, 255, 0.01) 118px,
+      rgba(255, 255, 255, 0.01) 120px
     );
+  background-attachment: fixed;
   color: var(--color-text-primary);
   font-family: var(--font-body);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Grano de película sutil sobre todo (no bloquea clics) */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  opacity: 0.028;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 #root {
@@ -92,15 +116,72 @@ body {
 .text-display {
   font-family: var(--font-display);
   font-weight: 400;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .text-overline {
   text-transform: uppercase;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.16em;
   font-weight: 700;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--color-text-muted);
+}
+
+/* Texto con gradiente naranja → ámbar */
+.text-gradient {
+  background: linear-gradient(120deg, #fb923c 0%, #f97316 35%, #fbbf24 75%, #fdba74 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Título display con contorno sutil + gradiente animado */
+.text-hero {
+  background: linear-gradient(110deg, #fdba74 0%, #f97316 30%, #fbbf24 55%, #fb923c 80%, #fdba74 100%);
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradientShift 6s linear infinite;
+  filter: drop-shadow(0 4px 18px rgba(249, 115, 22, 0.3));
+}
+
+/* ─── Superficies ─── */
+@layer components {
+  .glass {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012) 42%, transparent),
+      linear-gradient(180deg, #161616, #101010);
+    border: 1px solid var(--color-border-subtle);
+    box-shadow: var(--shadow-card);
+  }
+
+  .glass-deep {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 40%),
+      linear-gradient(180deg, #1a1a1a, #121212);
+    border: 1px solid var(--color-border-subtle);
+    box-shadow: var(--shadow-elevated);
+  }
+}
+
+/* ─── Vinilo (disco) ─── */
+.vinilo {
+  position: relative;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 50% 50%, #f97316 0%, #9a3412 26%, #050505 27.5%),
+    repeating-radial-gradient(circle at 50% 50%, #131313 0px, #131313 2px, #1d1d1d 2px, #1d1d1d 3.2px);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.65),
+    0 0 70px rgba(249, 115, 22, 0.16);
+}
+.vinilo::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.09), transparent 38%, rgba(255, 255, 255, 0.03) 70%, transparent);
 }
 
 /* ─── Scrollbar discreto ─── */
@@ -113,15 +194,19 @@ body {
 .safe-area-top { padding-top: env(safe-area-inset-top, 0px); }
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
-/* ─── Animaciones ─── */
+/* ═══════════════════════════════════════════════════════
+   Animaciones
+   ═══════════════════════════════════════════════════════ */
+
+/* Entrada de tarjeta */
 @keyframes cardSlideUp {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(22px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.card-enter { animation: cardSlideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+.card-enter { animation: cardSlideUp 0.38s cubic-bezier(0.22, 1, 0.36, 1); }
 
 .stagger-in > * {
-  animation: cardSlideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: cardSlideUp 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .stagger-in > *:nth-child(1) { animation-delay: 0.04s; }
 .stagger-in > *:nth-child(2) { animation-delay: 0.08s; }
@@ -130,6 +215,14 @@ body {
 .stagger-in > *:nth-child(5) { animation-delay: 0.20s; }
 .stagger-in > *:nth-child(6) { animation-delay: 0.24s; }
 
+/* Transición entre pantallas */
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.screen-enter { animation: screenIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Pop (feedback de puntos, logros) */
 @keyframes popIn {
   0% { transform: scale(0.6); opacity: 0; }
   70% { transform: scale(1.08); }
@@ -153,13 +246,89 @@ body {
 }
 .ticker { animation: ticker linear forwards; }
 
-/* ─── Shimmer para splash ─── */
+/* Pulso de glow (vinilo, trofeo) */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 36px rgba(249, 115, 22, 0.32), 0 0 72px rgba(249, 115, 22, 0.14); }
+  50% { box-shadow: 0 0 62px rgba(249, 115, 22, 0.58), 0 0 110px rgba(249, 115, 22, 0.26); }
+}
+.animate-pulse-glow { animation: pulseGlow 2.6s ease-in-out infinite; }
+
+/* Rotación lenta (vinilo) */
+@keyframes spin360 {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow { animation: spin360 9s linear infinite; }
+
+/* Flotación suave */
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+.animate-float { animation: floatY 5.5s ease-in-out infinite; }
+
+/* Gradiente animado (títulos) */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 220% 50%; }
+}
+
+/* Barrido de brillo en botones primarios */
+.btn-shine { position: relative; overflow: hidden; }
+.btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -130%;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.55s ease;
+  pointer-events: none;
+}
+.btn-shine:hover::after { left: 170%; }
+
+/* Equalizer (hero) */
+@keyframes eq {
+  0% { transform: scaleY(0.3); }
+  100% { transform: scaleY(1); }
+}
+.eq-bar {
+  transform-origin: bottom;
+  animation: eq 0.9s ease-in-out infinite alternate;
+  border-radius: 9999px;
+}
+
+/* Shimmer para splash */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
 .shimmer {
-  background: linear-gradient(90deg, #1c1c1c 25%, #2a2a2a 50%, #1c1c1c 75%);
+  background: linear-gradient(90deg, #1c1c1c 25%, #33312e 50%, #1c1c1c 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
 }
+
+/* Confeti */
+@keyframes confettiFall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(105vh) rotate(720deg); opacity: 0.35; }
+}
+.confetti-piece {
+  position: fixed;
+  top: 0;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  animation: confettiFall linear infinite;
+  pointer-events: none;
+  z-index: 70;
+}
+
+/* Anillo expansivo (trofeo) */
+@keyframes pingRing {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+.animate-ping-ring { animation: pingRing 1.8s cubic-bezier(0, 0, 0.2, 1) infinite; }

@@ -1,18 +1,23 @@
 /**
- * Trivia Hip Hop — pantalla de carga inicial
+ * Trivia Hip Hop — pantalla de carga inicial (vinilo + glow)
  */
+
+import { Equalizer, Vinilo } from './ui'
 
 export function SplashScreen({ label }: { label: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-6">
-      <div className="flex h-24 w-24 animate-pop items-center justify-center rounded-3xl border-2 border-orange-500/60 bg-stone-900 shadow-[0_0_40px_rgba(249,115,22,0.25)]">
-        <span className="text-5xl">🎤</span>
+      <div className="animate-float">
+        <Vinilo emoji="🎤" size={110} />
       </div>
-      <h1 className="text-display text-5xl text-white">TRIVIA HIP HOP</h1>
-      <p className="text-center text-sm text-stone-400">
-        Preguntas de la Enciclopedia Hip Hop
-      </p>
-      <div className="h-1.5 w-48 overflow-hidden rounded-full bg-stone-800">
+      <div className="text-center">
+        <h1 className="text-hero text-display text-5xl sm:text-6xl">TRIVIA HIP HOP</h1>
+        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.28em] text-stone-500">
+          Enciclopedia Hip Hop · Quiz
+        </p>
+      </div>
+      <Equalizer barras={7} />
+      <div className="h-1.5 w-52 overflow-hidden rounded-full bg-stone-800/80 shadow-inner">
         <div className="shimmer h-full w-full" />
       </div>
       <p className="text-xs text-stone-500">{label}</p>

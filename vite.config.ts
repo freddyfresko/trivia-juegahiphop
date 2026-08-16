@@ -34,7 +34,20 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png}'],
         navigateFallback: 'index.html',
+        // El dataset v4 (preguntas.json) va en su propio chunk y supera el límite
+        // por defecto de 2 MiB — subirlo para que la PWA precachee offline.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Dataset del Motor Final en chunk aparte (react/app quedan livianos)
+        manualChunks(id) {
+          if (id.includes('src/data/preguntas.json')) return 'data'
+        },
+      },
+    },
+  },
 })

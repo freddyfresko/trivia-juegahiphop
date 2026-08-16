@@ -2,11 +2,15 @@
  * Trivia Hip Hop — progreso local (fallback standalone / caché)
  *
  * El lobby es la fuente de verdad cuando hay sesión (SDK), pero el juego
- * también funciona standalone (sopa.juegahiphop.cl directo, PWA) y debe
+ * también funciona standalone (trivia.juegahiphop.cl directo, PWA) y debe
  * persistir localmente + mergear con el remoto al reconectar.
+ *
+ * Motor Final: además del progreso clásico, registra el rendimiento por
+ * eje / operación / dificultad (adaptación §21) y la memoria de
+ * conocimientos vistos (repetición inteligente §23-24).
  */
 
-import type { TriviaState, TriviaStats } from './types'
+import type { RespuestaResult, TriviaState, TriviaStats } from './types'
 
 const STORAGE_KEY = 'trivia_progress_v1'
 
@@ -21,6 +25,11 @@ export function estadoInicial(): TriviaState {
     rachaMaxima: 0,
     desbloqueados: [],
     partidasPorArea: {},
+    rendimientoEjes: {},
+    rendimientoOperaciones: {},
+    rendimientoDificultades: {},
+    conocimientosVistos: {},
+    ultimasPreguntas: [],
   }
 }
 
@@ -51,6 +60,17 @@ export function limpiarLocal(): void {
   }
 }
 
+/** Merge de dos registros de rendimiento (semántica de unión) */
+function mergeRendimiento(a: Record<string, { ok: number; total: number }> | undefined, b: Record<string, { ok: number; total: number }> | undefined) {
+  const out: Record<string, { ok: number; total: number }> = {}
+  for (const [k, v] of Object.entries(a ?? {})) out[k] = { ...v }
+  for (const [k, v] of Object.entries(b ?? {})) {
+    const prev = out[k]
+    out[k] = prev ? { ok: prev.ok + v.ok, total: prev.total + v.total } : { ...v }
+  }
+  return out
+}
+
 /**
  * Merge local ↔ remoto (semántica de unión, gana el que tenga más progreso).
  * Se usa al recibir el progreso del lobby después de haber jugado offline.
@@ -67,7 +87,25 @@ export function mergeEstados(local: TriviaState, remoto: TriviaState | null): Tr
     rachaMaxima: Math.max(local.rachaMaxima, remoto.rachaMaxima),
     desbloqueados: union(local.desbloqueados, remoto.desbloqueados),
     partidasPorArea: { ...remoto.partidasPorArea, ...local.partidasPorArea },
+    rendimientoEjes: mergeRendimiento(local.rendimientoEjes, remoto.rendimientoEjes),
+    rendimientoOperaciones: mergeRendimiento(local.rendimientoOperaciones, remoto.rendimientoOperaciones),
+    rendimientoDificultades: mergeRendimiento(local.rendimientoDificultades, remoto.rendimientoDificultades),
+    conocimientosVistos: mergeVistos(local.conocimientosVistos, remoto.conocimientosVistos),
+    ultimasPreguntas: union(local.ultimasPreguntas, remoto.ultimasPreguntas).slice(-40),
   }
+}
+
+function mergeVistos(
+  a: Record<string, { visto: number; fallado: number }> | undefined,
+  b: Record<string, { visto: number; fallado: number }> | undefined,
+) {
+  const out: Record<string, { visto: number; fallado: number }> = {}
+  for (const [k, v] of Object.entries(a ?? {})) out[k] = { ...v }
+  for (const [k, v] of Object.entries(b ?? {})) {
+    const prev = out[k]
+    out[k] = prev ? { visto: prev.visto + v.visto, fallado: prev.fallado + v.fallado } : { ...v }
+  }
+  return out
 }
 
 function union<T>(a: T[], b: T[]): T[] {
@@ -85,6 +123,18 @@ export function calcularStats(estado: TriviaState): TriviaStats {
   }
 }
 
+function registrar(
+  reg: Record<string, { ok: number; total: number }>,
+  clave: string,
+  correcta: boolean,
+): Record<string, { ok: number; total: number }> {
+  const prev = reg[clave] ?? { ok: 0, total: 0 }
+  return {
+    ...reg,
+    [clave]: { ok: prev.ok + (correcta ? 1 : 0), total: prev.total + 1 },
+  }
+}
+
 /** Aplica el resultado de una ronda completa al estado persistido */
 export function aplicarRonda(
   estado: TriviaState,
@@ -94,9 +144,10 @@ export function aplicarRonda(
     aciertos: number
     total: number
     score: number
+    resultados: RespuestaResult[]
   },
 ): TriviaState {
-  const nuevo: TriviaState = {
+  let nuevo: TriviaState = {
     ...estado,
     totalPartidas: estado.totalPartidas + 1,
     totalCorrectas: estado.totalCorrectas + ronda.aciertos,
@@ -119,6 +170,26 @@ export function aplicarRonda(
   } else {
     nuevo.mejorMixto = Math.max(estado.mejorMixto, ronda.score)
   }
+
+  // ─── Motor Final: rendimiento por dimensión + memoria de conocimientos ───
+  for (const r of ronda.resultados) {
+    nuevo.rendimientoEjes = registrar(nuevo.rendimientoEjes, r.eje, r.correcta)
+    nuevo.rendimientoOperaciones = registrar(nuevo.rendimientoOperaciones, r.operacion, r.correcta)
+    nuevo.rendimientoDificultades = registrar(nuevo.rendimientoDificultades, String(r.dificultad), r.correcta)
+
+    const prev = estado.conocimientosVistos[r.entradaId]
+    nuevo.conocimientosVistos = {
+      ...nuevo.conocimientosVistos,
+      [r.entradaId]: {
+        visto: (prev?.visto ?? 0) + 1,
+        fallado: (prev?.fallado ?? 0) + (r.correcta ? 0 : 1),
+      },
+    }
+  }
+
+  // Anti-memorización: recordar las últimas formulaciones vistas (40 máx.)
+  const ids = ronda.resultados.map((r) => r.id)
+  nuevo.ultimasPreguntas = [...nuevo.ultimasPreguntas, ...ids].slice(-40)
 
   return nuevo
 }

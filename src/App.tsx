@@ -26,12 +26,20 @@ import {
   guardarLocal,
   mergeEstados,
 } from './game/progress'
-import { seleccionarPreguntas } from './game/quiz'
-import type { Nivel, Pregunta, QuizConfig, RespuestaResult, Screen, TriviaState } from './game/types'
+import { seleccionarPreguntas, analizarDebilidades } from './game/quiz'
+import type { Dificultad, Pregunta, QuizConfig, RespuestaResult, Screen, TriviaState } from './game/types'
 
 const GAME_ID = 'trivia'
 const LOBBY_ORIGIN = 'https://juegahiphop.cl'
 const RESET_PENDING_KEY = 'trivia_reset_pending'
+
+/** Nombres de dificultad para el SDK del lobby (metadata) */
+const DIFICULTAD_SDK: Record<Dificultad, string> = {
+  1: 'facil',
+  2: 'medio',
+  3: 'dificil',
+  4: 'experto',
+}
 
 interface RondaResultado {
   config: QuizConfig
@@ -204,9 +212,9 @@ export default function App() {
   // ═══════════════════════════════════════════════════════
 
   const empezarPartida = useCallback(
-    (modo: 'area' | 'mixto', area: string | null, nivel: Nivel) => {
-      const cfg: QuizConfig = { modo, area: area ?? undefined, nivel }
-      const preg = seleccionarPreguntas(cfg)
+    (modo: 'area' | 'mixto', area: string | null, dificultad: Dificultad) => {
+      const cfg: QuizConfig = { modo, area: area ?? undefined, dificultad }
+      const preg = seleccionarPreguntas(cfg, estadoRef.current)
       if (preg.length === 0) return
 
       setConfig(cfg)
@@ -221,7 +229,7 @@ export default function App() {
       // Notificar inicio de partida al lobby (telemetría)
       lobbyRef.current?.sendGameStarted({
         levelId: modo === 'area' ? (area ?? undefined) : 'mixto',
-        difficulty: nivel,
+        difficulty: DIFICULTAD_SDK[dificultad],
       })
     },
     [],
@@ -243,13 +251,14 @@ export default function App() {
           ? score > (prev.mejoresPuntajes[config.area] ?? 0)
           : score > prev.mejorMixto
 
-      // 1. Actualizar estado persistido (cálculo puro)
+      // 1. Actualizar estado persistido (cálculo puro con detalle por pregunta)
       const nuevo = aplicarRonda(prev, {
         modo: config.modo,
         area: config.area,
         aciertos,
         total,
         score,
+        resultados,
       })
       const ultimoAcierto = [...resultados].reverse().find((r) => r.correcta)
       const tUltimo = ultimoAcierto?.tiempoSegundos ?? 0
@@ -273,7 +282,8 @@ export default function App() {
         const yaNotificados = logrosNotificadosRef.current
         for (const l of nuevos) {
           if (yaNotificados.has(l.id)) continue
-          void lobby?.unlockAchievement({ achievementId: l.id, metadata: { score } })
+          // Fire-and-forget: si el lobby no responde (standalone/timeout), no romper la partida
+          lobby?.unlockAchievement({ achievementId: l.id, metadata: { score } })?.catch(() => {})
           yaNotificados.add(l.id)
         }
       }
@@ -282,7 +292,7 @@ export default function App() {
       lobbyRef.current?.sendGameCompleted({
         score,
         itemId: config.modo === 'area' ? (config.area ?? 'mixto') : 'mixto',
-        difficulty: config.nivel,
+        difficulty: DIFICULTAD_SDK[config.dificultad],
         timeSpent,
         completed: true,
         metadata: {
@@ -311,7 +321,7 @@ export default function App() {
       lobbyRef.current?.sendGameCompleted({
         score: 0,
         itemId: config?.modo === 'area' ? (config.area ?? 'mixto') : 'mixto',
-        difficulty: config?.nivel ?? 'basico',
+        difficulty: config ? DIFICULTAD_SDK[config.dificultad] : 'facil',
         timeSpent: Math.round((Date.now() - startRef.current) / 1000),
         completed: false,
       })
@@ -326,7 +336,7 @@ export default function App() {
 
   const revancha = useCallback(() => {
     if (!config) return
-    empezarPartida(config.modo, config.area ?? null, config.nivel)
+    empezarPartida(config.modo, config.area ?? null, config.dificultad)
   }, [config, empezarPartida])
 
   // ═══════════════════════════════════════════════════════
@@ -335,53 +345,51 @@ export default function App() {
 
   if (screen === 'splash') return <SplashScreen label={splashLabel} />
 
-  if (screen === 'quiz' && config) {
-    return (
-      <QuizScreen
-        config={config}
-        preguntas={preguntas}
-        onTerminar={terminarPartida}
-        onAbandonar={abandonarPartida}
-        audio={{
-          playCorrect: audio.playCorrect,
-          playWrong: audio.playWrong,
-          playTick: audio.playTick,
-          playLose: audio.playLose,
-        }}
-        pausado={pausado}
-      />
-    )
-  }
-
-  if (screen === 'results' && ronda) {
-    return (
-      <ResultsScreen
-        score={ronda.score}
-        aciertos={ronda.aciertos}
-        total={ronda.total}
-        resultados={ronda.resultados}
-        area={ronda.config.area ?? null}
-        modo={ronda.config.modo}
-        nuevosLogros={nuevosLogros}
-        dominada={ronda.dominada}
-        esNuevoRecord={ronda.esNuevoRecord}
-        displayName={displayName}
-        onRevancha={revancha}
-        onHome={() => setScreen('home')}
-        onSalir={salir}
-      />
-    )
-  }
-
+  // Transición suave entre pantallas (key + screen-enter)
   return (
-    <HomeScreen
-      estado={estado}
-      esInvitado={esInvitado}
-      displayName={displayName}
-      onJugar={empezarPartida}
-      onReset={handleReset}
-      onSalir={salir}
-      resetPendiente={resetPendiente}
-    />
+    <div key={screen} className="screen-enter h-full">
+      {screen === 'quiz' && config ? (
+        <QuizScreen
+          config={config}
+          preguntas={preguntas}
+          onTerminar={terminarPartida}
+          onAbandonar={abandonarPartida}
+          audio={{
+            playCorrect: audio.playCorrect,
+            playWrong: audio.playWrong,
+            playTick: audio.playTick,
+            playLose: audio.playLose,
+          }}
+          pausado={pausado}
+        />
+      ) : screen === 'results' && ronda ? (
+        <ResultsScreen
+          score={ronda.score}
+          aciertos={ronda.aciertos}
+          total={ronda.total}
+          resultados={ronda.resultados}
+          area={ronda.config.area ?? null}
+          modo={ronda.config.modo}
+          nuevosLogros={nuevosLogros}
+          dominada={ronda.dominada}
+          esNuevoRecord={ronda.esNuevoRecord}
+          displayName={displayName}
+          debilidades={analizarDebilidades(estado, 3)}
+          onRevancha={revancha}
+          onHome={() => setScreen('home')}
+          onSalir={salir}
+        />
+      ) : (
+        <HomeScreen
+          estado={estado}
+          esInvitado={esInvitado}
+          displayName={displayName}
+          onJugar={empezarPartida}
+          onReset={handleReset}
+          onSalir={salir}
+          resetPendiente={resetPendiente}
+        />
+      )}
+    </div>
   )
 }
