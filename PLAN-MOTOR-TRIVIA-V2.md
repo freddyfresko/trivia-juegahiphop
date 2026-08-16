@@ -248,6 +248,28 @@ integra corregida; rechazada salta; juez 2.0 aprobada a mano entra).
 **FASE 6 ⏸️ Telemetría por pregunta (lobby/Supabase)** — PENDIENTE de decisión de Freddy.
 Se pospone sin bloquear lo demás (plan §7).
 
+---
+
+## 🔄 CAMBIO DE RUMBO (2026-08-16) — "CALIDAD PRIMERO" (decisión de Freddy)
+
+> **"No ando buscando cantidad... quiero calidad, que esté bien interpretado el
+> conocimiento del hip hop porque ES CONOCIMIENTO HUMANO. Si es necesario borrar
+> todo y generar todas las preguntas de nuevo, se hace."**
+
+**Decisión:** el dataset legacy (1224 preguntas, 491 con señales de plantilla) queda
+**CONGELADO** (no se toca; vive en git commit `87443cc` y backups). Se construye un
+**dataset NUEVO de calidad desde cero** en `src/data/preguntas-nuevas.json` (v5.0.0):
+crece SOLO con lotes aprobados por Freddy (redactor LLM + reglas duras + juez ≥4 +
+revisión humana en el panel). El swap a producción (preguntas.json) ocurre solo cuando
+el pool nuevo pase el QA completo y Freddy dé la orden (NO push/deploy sin aviso).
+
+**Pipeline del pool nuevo:** redactor (prompts/redactor.md) → generar-lote.py (reglas)
+→ juez.md (≥4/5) → panel de revisión (Freddy aprueba/rechaza/corrige) →
+`integrar-lote.py N` (inserta al pool nuevo con dedup) → QA final → swap.
+
+**Escala honesta:** ~333 entradas de la enciclopedia × 1-2 preguntas de calidad =
+~400-700 preguntas finales. Se prefiere un pool chico impecable a uno grande con ruido.
+
 **FASE 7 🔄 Cierre** — QA final: invariantes 10/10 ✓, dev server sirve dataset 4.4.0 ✓,
 QA visual-jugado con subagente browser en curso (dev server en localhost:5179).
 

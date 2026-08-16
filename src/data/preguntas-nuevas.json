@@ -1,0 +1,9 @@
+{
+  "preguntas": [],
+  "meta": {
+    "total": 0,
+    "version": "5.0.0",
+    "fuente": "redactor-llm v2 (motor de calidad)",
+    "qa": "2026-08-16 dataset nuevo de calidad — legacy 4.2.3 congelado (1224 preguntas en git/backups)"
+  }
+}

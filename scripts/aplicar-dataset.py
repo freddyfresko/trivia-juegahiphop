@@ -22,7 +22,7 @@ import sys
 from datetime import datetime
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(RAIZ, 'src', 'data', 'preguntas.json')
+DATA = os.path.join(RAIZ, 'src', 'data', 'preguntas-nuevas.json')  # pool de calidad v2 (legacy congelado)
 REVISION = os.path.join(RAIZ, 'lotes', 'revision-dataset.json')
 BACKUP_DIR = os.path.join(RAIZ, 'scripts', 'backups')
 
