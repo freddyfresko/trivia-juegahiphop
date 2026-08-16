@@ -24,7 +24,9 @@ tocan por defecto: se listan como DUDOSOS. Freddy aprobó eliminar los 4 de
 hook/bassline (2026-08-16) → ver DUDOSAS_APROBADAS.
 
 Criterio validado en dry-run (ago-2026): 1275 → 148 eliminadas (144 reglas +
-4 dudosas aprobadas) → 1127 quedan.
+4 dudosas aprobadas) → 1127 quedan. Corrección posterior (mismo día): la
+lista ABSTRACTOS usaba términos acentuados en vez de los ids reales de la
+enciclopedia → +28 absurdas eliminadas (total 176).
 
 Uso:
   python scripts/filtrar-semantica.py            # dry-run: reporte, no escribe
@@ -63,15 +65,16 @@ PROCESOS = {
 }
 
 # ids de la enciclopedia = concepto abstracto puro (valores, habilidades,
-# elementos intangibles) — el dónde/cuándo de origen no aplica
+# elementos intangibles) — el dónde/cuándo de origen no aplica.
+# ⚠️ Son los IDs (slugs) reales de la enciclopedia, NO los términos
+# acentuados ('metrica', no 'métrica'; 'expression', no 'expresión').
 ABSTRACTOS = {
-    'peace', 'love', 'unity', 'respect', 'knowledge', 'knowledge-of-self',
-    'creatividad', 'expresión', 'autoexpresión', 'identidad', 'carácter',
-    'tradición', 'comunidad', 'originalidad', 'resistencia',
-    'realness-autenticidad', 'presencia-escenica', 'flow', 'groove', 'ritmo',
-    'métrica', 'musicality', 'having-fun', 'crowd-pleaser',
-    'cultura-de-barrio', 'cultura-de-calle', 'street-la-calle', 'style',
-    'foundation', 'beat', 'bassline', 'hook', 'beef', 'paz', 'amor',
+    'bassline', 'beat', 'beef', 'character', 'community', 'creativity',
+    'crowdpleaser', 'cultura-de-barrio', 'expression', 'flow', 'foundation',
+    'groove', 'having-fun', 'hook', 'identity', 'knowledge',
+    'knowledge-of-self', 'love', 'metrica', 'musicality', 'originality',
+    'peace', 'realness', 'resistance', 'respect', 'rhythm', 'self-expression',
+    'stagepresence', 'street', 'street-culture', 'style', 'tradicion', 'unity',
 }
 
 
@@ -85,8 +88,10 @@ def lugar_real(lugar):
 
 
 # Casos límite (concepto abstracto CON lugar real) aprobados por Freddy
-# para ELIMINAR (2026-08-16): hook/bassline no "surgen" en un lugar/época.
-DUDOSAS_APROBADAS = {'p00813', 'p00968', 'p01137', 'p01270'}
+# para ELIMINAR (2026-08-16): hook/bassline + street/realness no "surgen"
+# en un lugar/época.
+DUDOSAS_APROBADAS = {'p00813', 'p00968', 'p01137', 'p01270',
+                     'p01036', 'p01325', 'p01330'}
 
 
 def es_generica_sin_contexto(pregunta):
@@ -263,9 +268,9 @@ def main():
         data['preguntas'] = quedan
         data['meta'] = {
             'total': len(quedan),
-            'version': '4.1.0',
+            'version': '4.2.1',
             'fuente': 'enciclopedia',
-            'qa': '2026-08-16 filtro semantico motor v2 (148 eliminadas)',
+            'qa': f'2026-08-16 filtro semantico motor v2 ({len(eliminadas)} eliminadas)',
         }
         with open(DATA, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
