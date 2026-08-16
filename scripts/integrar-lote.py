@@ -75,14 +75,49 @@ def main():
     siguiente = (max(usado_ids) + 1) if usado_ids else 1
     created_at = datetime.now(timezone.utc).isoformat()
 
+    # revisión del panel (revision-XXX.json): corrige textos, salta
+    # rechazadas, la aprobación humana manda sobre el juez.
+    rev_path = os.path.join(os.path.dirname(lote_path),
+                            os.path.basename(lote_path).replace('lote-', 'revision-'))
+    revs = {}
+    if os.path.exists(rev_path):
+        rev_data = json.load(open(rev_path, encoding='utf-8'))
+        for r in rev_data.get('preguntas', []):
+            revs[r['idx']] = r
+        print(f'📝 revisión encontrada: {sum(1 for r in revs.values() if r.get("estado"))} '
+              f'decididas ({sum(1 for r in revs.values() if r.get("estado") == "aprobada")}✓ / '
+              f'{sum(1 for r in revs.values() if r.get("estado") == "rechazada")}✗)')
+
     insertadas, omitidas, rechazadas = [], [], []
-    for it in lote['preguntas']:
-        # rechazo: reglas duras con errores o juez < 4
-        if it.get('validacion'):
-            rechazadas.append((it['entrada_id'], 'reglas: ' + '; '.join(it['validacion'][:2])))
+    for i, it in enumerate(lote['preguntas']):
+        r = revs.get(i)
+        # rechazada por Freddy
+        if r and r.get('estado') == 'rechazada':
+            nota = f" — {r.get('nota')}" if r.get('nota') else ''
+            rechazadas.append((it['entrada_id'], 'rechazada por Freddy' + nota))
             continue
+        # correcciones de Freddy (si editó en el panel)
+        it = dict(it)
+        if r:
+            if r.get('pregunta'):
+                it['pregunta'] = r['pregunta']
+            if r.get('opciones'):
+                it['opciones'] = list(r['opciones'])
+            if r.get('indice_correcta') is not None:
+                it['indice_correcta'] = r['indice_correcta']
+            if r.get('explicacion'):
+                it['explicacion'] = r['explicacion']
+        # re-validar reglas duras con los textos FINALES (las correcciones
+        # pueden romper paralelismo/longitudes → se rechazan con motivo)
+        e0 = por_id.get(it['entrada_id'], {})
+        errs_finales = gen.validar(it, e0)
+        if errs_finales:
+            rechazadas.append((it['entrada_id'], 'reglas tras revisión: ' + '; '.join(errs_finales[:2])))
+            continue
+        # rechazo: juez < 4, salvo aprobación humana explícita
         juez = it.get('juez') or {}
-        if juez.get('global', 5) < 4.0:
+        humano = bool(r and r.get('estado') == 'aprobada')
+        if not humano and juez.get('global', 5) < 4.0:
             rechazadas.append((it['entrada_id'], f"juez {juez.get('global')}/5"))
             continue
         # dedup normalizado (la manual de la enciclopedia ya vive en el pool)
@@ -122,16 +157,32 @@ def main():
         resp_pool.add(nr)
         siguiente += 1
 
+    # marcar el lote como integrado (aunque todo fuera rechazado: la
+    # revisión quedó cerrada y el panel lo muestra gris)
+    estado_path = os.path.join(LOTES_DIR, 'estado.json')
+    estado = {'lotes': {}}
+    if os.path.exists(estado_path):
+        with open(estado_path, encoding='utf-8') as f:
+            estado = json.load(f)
+    estado['lotes'][f'{args.lote:03d}'] = 'integrado'
+    with open(estado_path, 'w', encoding='utf-8') as f:
+        json.dump(estado, f, ensure_ascii=False, indent=2)
+
     if insertadas:
         ts = datetime.now().strftime('%Y%m%d-%H%M%S')
         backup = os.path.join(BACKUP_DIR, f'preguntas-{ts}.json')
         shutil.copy2(DATA, backup)
         data['preguntas'] = pool + insertadas
+        ver = str(data['meta'].get('version', '4.0.0'))
+        partes = [int(x) for x in ver.split('.')]
+        while len(partes) < 3:
+            partes.append(0)
+        partes[2] += 1
         data['meta'] = {
             'total': len(data['preguntas']),
-            'version': '4.2.0',
+            'version': '.'.join(map(str, partes)),
             'fuente': 'enciclopedia',
-            'qa': f'2026-08-16 lote {args.lote:03d} redactor-llm integrado (+{len(insertadas)})',
+            'qa': f"{datetime.now():%Y-%m-%d} lote {args.lote:03d} redactor-llm integrado (+{len(insertadas)})",
         }
         with open(DATA, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, separators=(',', ':'))

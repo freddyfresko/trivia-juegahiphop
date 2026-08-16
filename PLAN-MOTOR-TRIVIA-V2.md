@@ -239,6 +239,11 @@ Muestra 200 del dataset: detectó el bug de ABSTRACTOS + ~48 preguntas con largo
 contra el pool (manuales ya existentes se omiten), metadata completa, ids pXXXXX nuevos.
 **Dataset final: 1235 preguntas** (139 del redactor-LLM, source_type 'redactor-llm'),
 QA 10/10, 0 clases prohibidas, lint+build OK.
+**Panel de revisión web (nuevo, reemplaza el .md)**: `revision/` + `scripts/servir-revision.mjs`
+(Node puro, puerto 5187). Freddy ve los lotes como tarjetas editables, aprueba/rechaza/corrige
+con autosave → `lotes/revision-XXX.json` → `integrar-lote.py N` aplica las correcciones, salta
+las rechazadas y respeta su aprobación sobre el juez. Test de pipeline verificado (editada se
+integra corregida; rechazada salta; juez 2.0 aprobada a mano entra).
 
 **FASE 6 ⏸️ Telemetría por pregunta (lobby/Supabase)** — PENDIENTE de decisión de Freddy.
 Se pospone sin bloquear lo demás (plan §7).

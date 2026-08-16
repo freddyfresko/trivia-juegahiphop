@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Revisión de preguntas — Trivia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="brand">
+        <h1>Revisión de preguntas</h1>
+        <p class="sub">Motor Trivia v2 · curaduría de lotes del redactor</p>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="stat-num" id="stat-preguntas">–</span><span class="stat-lab">preguntas en dataset</span></div>
+        <div class="stat"><span class="stat-num" id="stat-enc">–</span><span class="stat-lab">entradas enciclopedia</span></div>
+        <div class="stat"><span class="stat-num" id="stat-version">–</span><span class="stat-lab">versión dataset</span></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="lotes-bar">
+      <div class="lotes-chips" id="lotes-chips"></div>
+      <div class="lote-acciones">
+        <span class="save-state" id="save-state"></span>
+        <button class="btn ghost" id="btn-reset" title="Volver todo a pendiente (borra la revisión guardada)">↺ reset</button>
+        <button class="btn" id="btn-integrar" title="Integrar aprobadas al dataset">▶ integrar</button>
+      </div>
+    </section>
+
+    <section class="lote-head" id="lote-head" hidden>
+      <div>
+        <h2 id="lote-titulo">Lote</h2>
+        <p class="sub" id="lote-meta"></p>
+      </div>
+      <div class="progreso">
+        <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+        <div class="prog-nums" id="prog-nums"></div>
+      </div>
+    </section>
+
+    <section class="filtros" id="filtros" hidden>
+      <button class="chip filtro active" data-f="todas">Todas</button>
+      <button class="chip filtro" data-f="pendientes">Pendientes</button>
+      <button class="chip filtro" data-f="aprobadas">✓ Aprobadas</button>
+      <button class="chip filtro" data-f="rechazadas">✗ Rechazadas</button>
+      <button class="chip filtro" data-f="errores">⚠ Con errores</button>
+    </section>
+
+    <div id="cards" class="cards"></div>
+
+    <div class="integracion" id="integracion" hidden>
+      <h3>Integrar al dataset</h3>
+      <p>Cuando termines, integra las aprobadas (con tus correcciones) desde la terminal:</p>
+      <pre id="cmd-integrar">python scripts/integrar-lote.py N</pre>
+      <p class="sub">Las rechazadas se saltan · las aprobadas se integran aunque el juez esté bajo · el QA corre después.</p>
+    </div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
