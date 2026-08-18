@@ -94,7 +94,11 @@ def barajar_balanceado(opciones, ic, dist_pool, rng=None):
     opc = list(opciones)
     correcta = opc[ic]
     distractores = [o for j, o in enumerate(opc) if j != ic]
-    candidatas = [p for p in range(4) if p != ic]
+    # ⚠️ NO excluir la posición original: si el redactor siempre pone ic=0
+    # (A), vetar la posición 0 desbalancea el pool (A ≈ 12%). Todas las
+    # posiciones compiten por ser la MENOS usada; el anti-patrón queda
+    # garantizado por el balance global 25%.
+    candidatas = list(range(4))
     rng = rng or random
     if dist_pool:
         menor = min(dist_pool.get(p, 0) for p in candidatas)
