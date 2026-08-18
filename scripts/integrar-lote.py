@@ -24,6 +24,7 @@ Invariantes tras integrar (correr scripts/qa_trivia_dataset.py después):
 import argparse
 import json
 import os
+import random
 import re
 import shutil
 import sys
@@ -59,6 +60,8 @@ def main():
     ap.add_argument('--lote-json', help='ruta al JSON del lote (default lotes/lote-XXX.json)')
     ap.add_argument('--umbral-juez', type=float, default=4.0,
                     help='nota mínima del juez para integrar sin aprobación humana (default 4.0)')
+    ap.add_argument('--no-shuffle', action='store_true',
+                    help='no barajar la posición de la respuesta correcta (default: aleatoria A/B/C/D)')
     args = ap.parse_args()
 
     lote_path = args.lote_json or os.path.join(LOTES_DIR, f'lote-{args.lote:03d}.json')
@@ -130,6 +133,14 @@ def main():
 
         e = por_id.get(it['entrada_id'], {})
         w = gen.w_de(it['pregunta'])
+        # shuffle de la correcta: posición aleatoria A/B/C/D (salvo --no-shuffle)
+        if args.no_shuffle:
+            opciones_final, ic_final = list(it['opciones']), it['indice_correcta']
+        else:
+            from collections import Counter as _C
+            dist_pool = _C(q['indice_correcta'] for q in pool)
+            opciones_final, ic_final = gen.barajar_balanceado(
+                it['opciones'], it['indice_correcta'], dist_pool)
         nueva = {
             'id': f'p{siguiente:05d}',
             'tipo': w,
@@ -138,11 +149,11 @@ def main():
             'nivel': it.get('nivel') or e.get('nivel', 'basico'),
             'dificultad': it.get('dificultad', 2),
             'pregunta': it['pregunta'],
-            'respuesta': it['opciones'][it['indice_correcta']],
+            'respuesta': opciones_final[ic_final],
             'respuesta_corta': False,
             'explicacion': it['explicacion'],
-            'opciones': it['opciones'],
-            'indice_correcta': it['indice_correcta'],
+            'opciones': opciones_final,
+            'indice_correcta': ic_final,
             'entrada_id': it['entrada_id'],
             'termino': it.get('termino') or e.get('termino', ''),
             'area': it.get('area') or e.get('categoria', ''),

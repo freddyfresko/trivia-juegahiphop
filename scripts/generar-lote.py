@@ -24,6 +24,7 @@ de Freddy, legible). No toca el dataset (la integración es Fase 5).
 import argparse
 import json
 import os
+import random
 import re
 import sys
 from datetime import datetime
@@ -64,6 +65,49 @@ ABSOLUTOS = re.compile(r'\b(siempre|nunca|jamás|todas las anteriores|'
 
 def norm(s):
     return re.sub(r'\s+', ' ', str(s)).strip().lower()
+
+
+def barajar_correcta(opciones, ic, rng=None):
+    """Devuelve (opciones_barajadas, nuevo_ic) con la correcta en posición
+    aleatoria A/B/C/D. Los distractores conservan su orden relativo y la
+    correcta nunca queda en la misma posición que tenía (anti-patrón)."""
+    opc = list(opciones)
+    correcta = opc[ic]
+    distractores = [o for j, o in enumerate(opc) if j != ic]
+    candidatas = [0, 1, 2, 3]
+    candidatas.remove(ic)
+    nueva_pos = (rng or random).choice(candidatas)
+    nuevas = [None] * 4
+    nuevas[nueva_pos] = correcta
+    di = 0
+    for j in range(4):
+        if nuevas[j] is None:
+            nuevas[j] = distractores[di]
+            di += 1
+    return nuevas, nueva_pos
+
+
+def barajar_balanceado(opciones, ic, dist_pool, rng=None):
+    """Igual que barajar_correcta pero elige la posición MENOS usada del
+    pool (balance global ~25% por letra). Entre empates, aleatorio; nunca
+    la posición original (anti-patrón)."""
+    opc = list(opciones)
+    correcta = opc[ic]
+    distractores = [o for j, o in enumerate(opc) if j != ic]
+    candidatas = [p for p in range(4) if p != ic]
+    rng = rng or random
+    if dist_pool:
+        menor = min(dist_pool.get(p, 0) for p in candidatas)
+        candidatas = [p for p in candidatas if dist_pool.get(p, 0) == menor]
+    nueva_pos = rng.choice(candidatas)
+    nuevas = [None] * 4
+    nuevas[nueva_pos] = correcta
+    di = 0
+    for j in range(4):
+        if nuevas[j] is None:
+            nuevas[j] = distractores[di]
+            di += 1
+    return nuevas, nueva_pos
 
 
 def primer_token(t):
