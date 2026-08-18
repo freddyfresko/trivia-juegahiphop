@@ -335,7 +335,7 @@ export function QuizScreen({ config, preguntas, onTerminar, onAbandonar, audio, 
           {/* Fuente (trazabilidad §12) */}
           {pregunta.source && (
             <p className="mt-2 border-t border-stone-800 pt-2 text-[10px] italic leading-snug text-stone-500">
-              Fuente: {pregunta.source}
+              Fuente: {Array.isArray(pregunta.source) ? pregunta.source.join(' · ') : pregunta.source}
             </p>
           )}
 

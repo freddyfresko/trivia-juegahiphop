@@ -60,7 +60,7 @@ export interface Pregunta {
   /** Conocimientos relacionados (ids de la enciclopedia, §14) */
   relacionados?: string[]
   /** Trazabilidad (§12) */
-  source: string
+  source: string[] | string
   source_type: string
   periodo: string
   lugar: string
