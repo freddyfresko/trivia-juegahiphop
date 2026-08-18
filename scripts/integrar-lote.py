@@ -57,6 +57,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
     ap.add_argument('lote', type=int)
     ap.add_argument('--lote-json', help='ruta al JSON del lote (default lotes/lote-XXX.json)')
+    ap.add_argument('--umbral-juez', type=float, default=4.0,
+                    help='nota mínima del juez para integrar sin aprobación humana (default 4.0)')
     args = ap.parse_args()
 
     lote_path = args.lote_json or os.path.join(LOTES_DIR, f'lote-{args.lote:03d}.json')
@@ -114,11 +116,11 @@ def main():
         if errs_finales:
             rechazadas.append((it['entrada_id'], 'reglas tras revisión: ' + '; '.join(errs_finales[:2])))
             continue
-        # rechazo: juez < 4, salvo aprobación humana explícita
+        # rechazo: juez < umbral (default 4.0), salvo aprobación humana explícita
         juez = it.get('juez') or {}
         humano = bool(r and r.get('estado') == 'aprobada')
-        if not humano and juez.get('global', 5) < 4.0:
-            rechazadas.append((it['entrada_id'], f"juez {juez.get('global')}/5"))
+        if not humano and juez.get('global', 5) < args.umbral_juez:
+            rechazadas.append((it['entrada_id'], f"juez {juez.get('global')}/5 (umbral {args.umbral_juez})"))
             continue
         # dedup normalizado (la manual de la enciclopedia ya vive en el pool)
         nq, nr = norm(it['pregunta']), norm(it['opciones'][it['indice_correcta']])
