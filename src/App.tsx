@@ -308,6 +308,13 @@ export default function App() {
       guardarLocal(nuevo)
       void syncAlLobby(nuevo)
 
+      // 4b. Ad interstitial al terminar la ronda (placement: game_results).
+      // Fire-and-forget: si el lobby no tiene campaña o no responde,
+      // resuelve de inmediato y la pantalla de resultados sigue normal.
+      lobbyRef.current
+        ?.requestCampaign({ placement: 'game_results', rewardIds: [] })
+        .catch(() => {})
+
       // 5. Pantalla de resultados
       setRonda({ config, resultados, score, aciertos, total, dominada, esNuevoRecord })
       setScreen('results')
